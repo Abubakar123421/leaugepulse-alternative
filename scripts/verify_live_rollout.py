@@ -12,7 +12,7 @@ from leaguebot.config import Config
 def get_json(token: str, path: str):
     request = urllib.request.Request(
         f"https://discord.com/api/v10{path}",
-        headers={"Authorization": f"Bot {token}", "User-Agent": "JanthoBot rollout check"},
+        headers={"Authorization": f"Bot {token}", "User-Agent": "LeagueBot rollout check"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
@@ -27,7 +27,7 @@ def main() -> None:
     ).fetchone()["guild_id"]
     bot = get_json(config.token, "/users/@me")
     commands = get_json(
-        config.token, f"/applications/{bot['id']}/guilds/{guild_id}/commands"
+        config.token, f"/applications/{bot['id']}/commands"
     )
     command_names = sorted(command["name"] for command in commands)
     required = {
@@ -38,13 +38,16 @@ def main() -> None:
         "syncteamemojis",
         "setteamemoji",
     }
-    week_one = connection.execute(
+    current_week = connection.execute(
+        "SELECT current_week FROM guild_settings WHERE guild_id=?", (guild_id,)
+    ).fetchone()[0]
+    active_matchup = connection.execute(
         """SELECT channel_id,message_id FROM matchups
-           WHERE guild_id=? AND week=1 AND channel_id IS NOT NULL
+           WHERE guild_id=? AND week=? AND channel_id IS NOT NULL
            ORDER BY id LIMIT 1""",
-        (guild_id,),
+        (guild_id, current_week),
     ).fetchone()
-    pinned = get_json(config.token, f"/channels/{week_one['channel_id']}/pins")
+    pinned = get_json(config.token, f"/channels/{active_matchup['channel_id']}/pins")
     cards = connection.execute(
         """SELECT channel_id,message_id FROM open_team_cards
            WHERE guild_id=? ORDER BY team_name LIMIT 1""",
@@ -65,12 +68,13 @@ def main() -> None:
                 "required_commands_present": sorted(required.intersection(command_names)),
                 "missing_required_commands": sorted(required.difference(command_names)),
                 "aipreview_retired": "aipreview" not in command_names,
-                "week_one_channels": connection.execute(
-                    "SELECT COUNT(1) FROM matchups WHERE guild_id=? AND week=1 AND channel_id IS NOT NULL",
-                    (guild_id,),
+                "active_week": current_week,
+                "active_week_channels": connection.execute(
+                    "SELECT COUNT(1) FROM matchups WHERE guild_id=? AND week=? AND channel_id IS NOT NULL",
+                    (guild_id, current_week),
                 ).fetchone()[0],
                 "matchup_message_is_pinned": any(
-                    str(message["id"]) == str(week_one["message_id"]) for message in pinned
+                    str(message["id"]) == str(active_matchup["message_id"]) for message in pinned
                 ),
                 "open_team_card_buttons": labels,
             },

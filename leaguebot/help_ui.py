@@ -14,7 +14,7 @@ CATEGORIES = {
         "setup", "settings", "profile-approve", "team-release",
         "importrosters", "importfixtures", "importmembers", "import-schedule", "week", "season-close",
         "season-cleanup", "announce", "award", "seasonaward", "seasonawards", "gameoftheweek", "weekmvp", "syncteamemojis", "setteamemoji", "backup", "createweek",
-        "destinations", "setmatchcategory", "setannouncementchannel",
+        "destinations", "setannouncementchannel",
         "setscorechannel", "setstreamchannel", "setstorylinechannel",
         "settradechannel", "settransactionchannel", "setauditchannel",
         "setopenteamlist", "setopenchannel", "setpollchannel", "setrecruitingchannel",

@@ -1,85 +1,78 @@
 # Discord League Bot
 
-A portable, multi-server Discord bot for Madden and College Football leagues. Every league setting, owner, roster, fixture, result, channel destination, and career record is isolated by Discord server.
+A multi-server Discord bot for Madden and College Football leagues. Guild settings, owners, rosters, fixtures, results, channel destinations, reminders, AI jobs, and career records are isolated by Discord server and season.
 
-## Current Madden workflow
+## Madden workflow
 
-The bot uses exported league data as an import snapshot; it does not connect to NeonSportz.
+The bot uses prepared CSV snapshots; it does not connect directly to NeonSportz.
 
-- `/importrosters` imports the prepared 32-team roster snapshot and creates/reuses the matching team roles.
-- `/setopenteamlist` posts one persistent card per franchise with owner status, a roster preview, **Claim Team**, and a private paginated **View Team** button.
-- `/importfixtures` imports the complete season schedule. The supplied Madden file contains 272 fixtures across Weeks 1–18.
-- Team ownership lasts for the entire season. Members claim an open team with `/registerteam` or the persistent Open Teams panel; commissioners may use `/importmembers` for bulk assignments.
-- Starting the fixture import creates only the `WEEK 1 MATCHUPS` category and Week 1 game channels.
-- Every seven days, the bot creates the next week's category and channels first, then removes the previous weekly category and channels.
-- Results, records, ownership, career XP, and unresolved commissioner cases remain in SQLite after weekly channels are removed.
-- Unresolved games do not stop timed rollover. Commissioners can review an archived week with `/week number:<week>` and issue a force win, fair sim, or other final decision later.
-- Discord permission/API cleanup failures are retained and retried automatically.
-- `/roster team:<name-or-abbreviation>` displays a team's imported roster, and `/playersearch player:<name>` searches the season snapshot.
-- Team logos are not required and the player logo-upload workflow is disabled.
+1. `/setup` saves the league name, game, season, timezone, Commissioner role, and creates/reuses team roles. It does **not** create permanent channels or permanent categories.
+2. Commissioners map existing server channels with the destination commands. `/destinations` shows the saved routing.
+3. `/importrosters` imports `output/neonsportz-derived/madden_team_rosters.csv` (32 franchises, 2,074 players).
+4. `/setopenteamlist` posts one roster card per franchise with a private paginated **View Team** control. Members claim teams only through `/registerteam`; commissioners can bulk-assign owners with `/importmembers`.
+5. `/importfixtures` imports `output/neonsportz-derived/madden_18_week_fixtures.csv` (272 fixtures, Weeks 1–18). Team ownership lasts for the full season.
+6. The active week gets a top-level `WEEK X MATCHUPS` category and one channel per fixture. Rollover creates the next week first, then deletes the previous week’s channels/category. Results and history remain in SQLite.
 
-Prepared imports:
+Matchup cards are not pinned. Owners use reactions to schedule, counter, confirm, submit a score/screenshot, and request rulings. **Report Dispute** opens a private form and sends a numbered case to commissioner audit. Official results post exactly once to the configured final-score channel.
 
-- `output/neonsportz-derived/madden_team_rosters.csv` — 32 teams and 2,074 players.
-- `output/neonsportz-derived/madden_18_week_fixtures.csv` — 272 unplayed fixtures across 18 weeks.
+## Permanent destination commands
 
-The imported franchise set includes the custom Black Knights, Condors, and Dragons names from the supplied data.
+- `/setannouncementchannel`
+- `/setscorechannel`
+- `/setstorylinechannel`
+- `/settradechannel`
+- `/setopenteamlist` (`/setopenchannel` alias)
+- `/setpollchannel`
+- `/settransactionchannel`
+- `/setstreamchannel`
+- `/setauditchannel`
+- `/setrecruitingchannel` (primarily College Football)
 
-## Commissioner setup order
+Weekly matchup categories are automatic and are not mapped to a permanent category.
 
-1. Run `/setup` and choose the league settings and Commissioner role.
-2. Configure output channels with `/setannouncementchannel`, `/setscorechannel`, `/setstreamchannel`, `/setstorylinechannel`, `/settradechannel`, `/settransactionchannel`, `/setauditchannel`, `/setopenteamlist`, `/setpollchannel`, and `/setrecruitingchannel` as needed.
-3. Run `/importrosters` with `madden_team_rosters.csv`, review the 32-team preview, and confirm.
-4. Let members claim teams, or run `/importmembers` with Discord IDs/usernames and team names.
-5. Run `/importfixtures` with `madden_18_week_fixtures.csv`. Keep `start_now:True` to start the seven-day Week 1 clock and create Week 1 channels.
-6. Use `/week` for the commissioner dashboard. Use `/roster` and `/playersearch` to demonstrate imported data.
+## Other major features
 
-`/destinations` shows the complete per-server routing table. Madden and College Football servers can use different channels and settings while one bot application serves both.
+- Atomic `/importmembers` CSV onboarding plus `/syncmemberroles` repair.
+- Runtime custom-team-emoji resolution by emoji name via `/syncteamemojis` and `/setteamemoji`; Discord emoji IDs are never hardcoded.
+- Commissioner dashboards, force wins, fair simulations, result evidence/review, team release, and restart-safe reminders.
+- Career profiles, XP, leaderboard, season history, archival, and retryable season cleanup.
+- Game of the Week graphics with team-emoji voting.
+- Deterministic rankings/weekly recap facts, season awards, and optional Gemini narrative generation.
+- Optional Twitch and YouTube live alerts.
 
-## Matchup experience
-
-Each active fixture gets one public read-only channel. Only its two team owners and commissioners can interact. The matchup card is not pinned and supports reactions for scheduling, counterproposals, confirmation, score/screenshot submission, disputes, force-win requests, fair sim, and commissioner help.
-
-Scheduling reminders are restart-safe:
-
-- More than 24 hours remaining: once daily.
-- Between 24 and 6 hours: every two hours.
-- Final 6 hours: hourly.
-- Reminders stop immediately when the game is scheduled.
-
-Result evidence and cases go to the private commissioner audit channel. Official results post to the configured final-score channel and permanently update records and career progression.
-
-## AI and streams
-
-Gemini can generate matchup previews, final recaps, weekly storylines, power-ranking narratives, and commissioner-nominated Player of the Week posts. Rankings are calculated deterministically; Gemini writes only the narrative. AI failures never block league operations.
-
-Twitch and YouTube alerts are optional. Leave their credentials blank to run without stream detection.
-
-## Local setup
+## Local development
 
 Requires Python 3.11 or newer.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
+# Add secrets to .env locally.
+python -m compileall -q leaguebot tests scripts
+python -m pytest -q
 python main.py
 ```
 
-Invite the bot with the `bot` and `applications.commands` scopes. Enable Server Members intent. It needs View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Messages, Manage Roles, and Manage Channels. Keep the bot role above team roles.
+Invite the bot with `bot` and `applications.commands`. Enable Server Members intent. The bot needs View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Messages, Manage Roles, and Manage Channels. Keep its role above all team roles.
 
-Never commit or transfer a real `.env` file. If a bot token was exposed, rotate it in the Discord Developer Portal.
+## Fresh bot-hosting.net deployment
 
-## Tests
+The repository intentionally contains no live database or `.env`.
 
-```powershell
-python -m compileall leaguebot tests scripts
-python -m pytest -q
-```
+1. Create an **Application** deployment using the GitHub repository or a ZIP.
+2. Choose Python 3.11 or newer.
+3. Set **Entry File (`STARTUP_FILE`)** to `main.py`.
+4. Keep `requirements.txt` in the repository root; the host installs it automatically.
+5. Add the variables from `.env.example` in the host’s Environment Variables tab. `DISCORD_TOKEN` is required; Gemini, Twitch, and YouTube are optional.
+6. Start the deployment. The bot creates `data/leaguebot.sqlite3` automatically.
+7. Run `/setup`, map the permanent channels, import rosters, and import fixtures.
 
-The current suite also verifies the real prepared imports at 32 teams, 2,074 players, 272 fixtures, 18 weeks, and tests rollover while unresolved games remain saved.
+For later GitHub updates, back up `data/leaguebot.sqlite3` first and use a merge-style sync so host-only runtime data is not removed.
 
-## Deployment and transfer
+See [the hosting guide](docs/HOSTING_TRANSFER.md), [operator guide](docs/OPERATOR_GUIDE.md), and [agent handoff](AGENTS.md).
 
-See [docs/HOSTING_TRANSFER.md](docs/HOSTING_TRANSFER.md) and [docs/OPERATOR_GUIDE.md](docs/OPERATOR_GUIDE.md). Keep `data/` persistent and download backups regularly.
+## Security
+
+Never commit `.env`, Discord tokens, API keys, SQLite databases, logs, PIDs, or backups. Rotate any token that has ever been exposed. Production secrets belong only in the host’s environment-variable manager.

@@ -22,8 +22,133 @@ HOME_FORCE = "🏠"
 AWAY_FORCE = "✈️"
 FAIR_SIM = "🤝"
 HELP = "🆘"
-REACTIONS = (SCHEDULE, COUNTER, CONFIRM, FINISH, DISPUTE, HOME_FORCE, AWAY_FORCE, FAIR_SIM, HELP)
+REACTIONS = (SCHEDULE, COUNTER, CONFIRM, FINISH, HOME_FORCE, AWAY_FORCE, FAIR_SIM, HELP)
 
+
+class MatchupDisputeModal(discord.ui.Modal, title="Report Matchup Dispute"):
+    reason = discord.ui.TextInput(
+        label="What should the commissioner review?",
+        style=discord.TextStyle.paragraph,
+        placeholder="Explain what happened and what help you need.",
+        min_length=5,
+        max_length=1000,
+    )
+
+    def __init__(self, matchup_id: int):
+        super().__init__(
+            timeout=600,
+            custom_id=f"leaguebot:matchup:dispute-form:{matchup_id}",
+        )
+        self.matchup_id = matchup_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        db = interaction.client.db
+        matchup = await db.fetchone(
+            "SELECT * FROM matchups WHERE id=?", (self.matchup_id,)
+        )
+        if not matchup or interaction.user.id not in (
+            matchup["away_user_id"],
+            matchup["home_user_id"],
+        ):
+            await interaction.edit_original_response(
+                content="Only the two assigned team owners can report this matchup."
+            )
+            return
+        settings = await db.settings(matchup["guild_id"])
+        guild = interaction.client.get_guild(matchup["guild_id"])
+        audit = guild.get_channel(settings.get("audit_channel_id") or 0) if guild else None
+        if not isinstance(audit, discord.TextChannel):
+            await interaction.edit_original_response(
+                content="The commissioner audit channel is not configured."
+            )
+            return
+        reason = self.reason.value.strip()
+        case_id = await create_or_update_case(
+            db,
+            matchup=matchup,
+            opened_by=interaction.user.id,
+            kind="player_dispute",
+            reason=reason,
+        )
+        await db.audit(
+            matchup["guild_id"],
+            interaction.user.id,
+            "matchup_dispute_reported",
+            target_type="matchup",
+            target_id=str(matchup["id"]),
+            details={"case_id": case_id, "reason": reason},
+        )
+        mention = (
+            f"<@&{settings['commissioner_role_id']}>"
+            if settings.get("commissioner_role_id")
+            else "Commissioners"
+        )
+        await audit.send(
+            mention,
+            embed=discord.Embed(
+                title=f"Matchup Dispute · Case #{case_id}",
+                description=(
+                    f"**Matchup:** #{matchup['id']} · "
+                    f"{matchup['away_team']} @ {matchup['home_team']}\n"
+                    f"**Reported by:** <@{interaction.user.id}>\n\n"
+                    f"**Player statement**\n{reason}"
+                ),
+                color=discord.Color.red(),
+            ),
+            allowed_mentions=discord.AllowedMentions(
+                roles=True, users=False, everyone=False
+            ),
+        )
+        await interaction.edit_original_response(
+            content=f"Your dispute was sent privately to the commissioners as case #{case_id}."
+        )
+
+
+class MatchupDisputeButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"leaguebot:matchup:dispute:(?P<matchup_id>\d+)",
+):
+    def __init__(self, matchup_id: int):
+        self.matchup_id = matchup_id
+        super().__init__(
+            discord.ui.Button(
+                label="Report Dispute",
+                style=discord.ButtonStyle.danger,
+                custom_id=f"leaguebot:matchup:dispute:{matchup_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ) -> "MatchupDisputeButton":
+        return cls(int(match["matchup_id"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        matchup = await interaction.client.db.fetchone(
+            "SELECT * FROM matchups WHERE id=?", (self.matchup_id,)
+        )
+        if not matchup or interaction.user.id not in (
+            matchup["away_user_id"],
+            matchup["home_user_id"],
+        ):
+            await interaction.response.send_message(
+                "Only the two assigned team owners can report this matchup.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_modal(MatchupDisputeModal(self.matchup_id))
+
+
+class MatchupDisputeView(discord.ui.View):
+    def __init__(self, matchup_id: int):
+        super().__init__(timeout=None)
+        self.add_item(MatchupDisputeButton(matchup_id))
 
 async def matchup_channel_embed(db: Database, matchup, settings: dict, guild: discord.Guild | None = None) -> discord.Embed:
     away_team = await db.fetchone(
@@ -111,7 +236,6 @@ async def matchup_channel_embed(db: Database, matchup, settings: dict, guild: di
             "🔁 — Counter proposed time\n"
             "✅ — Accept or confirm\n"
             "🏁 — Submit result\n"
-            "⚠️ — Dispute submitted result\n"
             "🏠 — Request home-team force win\n"
             "✈️ — Request away-team force win\n"
             "🤝 — Request fair simulation\n"
@@ -119,7 +243,9 @@ async def matchup_channel_embed(db: Database, matchup, settings: dict, guild: di
         ),
         inline=False,
     )
-    embed.set_footer(text="Only the two team owners and league management can react.")
+    embed.set_footer(
+        text="Owners can use Report Dispute below to contact commissioners privately."
+    )
     return embed
 
 
@@ -211,7 +337,7 @@ async def ensure_matchup_message(
             pass
     embed = await matchup_channel_embed(db, matchup, settings, channel.guild)
     if message:
-        await message.edit(embed=embed, view=None)
+        await message.edit(embed=embed, view=MatchupDisputeView(matchup["id"]))
     else:
         mentions = " ".join(
             f"<@{uid}>" for uid in (matchup["away_user_id"], matchup["home_user_id"]) if uid
@@ -219,6 +345,7 @@ async def ensure_matchup_message(
         message = await channel.send(
             f"{mentions} Please schedule this matchup as soon as possible.",
             embed=embed,
+            view=MatchupDisputeView(matchup["id"]),
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
         for emoji in REACTIONS:

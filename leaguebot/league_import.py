@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -11,6 +13,8 @@ import discord
 from .checks import is_commissioner
 from .db import Database
 from .helpers import FINAL_STATUSES, iso_now, utcnow
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,6 +323,7 @@ class ConfirmRosterImportView(discord.ui.View):
     def __init__(self, db: Database, rows: list[RosterImportRow], author_id: int):
         super().__init__(timeout=600)
         self.db, self.rows, self.author_id = db, rows, author_id
+        self._background_tasks: set[asyncio.Task] = set()
 
     @discord.ui.button(label="Confirm Roster Import", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -329,10 +334,23 @@ class ConfirmRosterImportView(discord.ui.View):
         if not await is_commissioner(interaction, settings):
             await interaction.response.send_message("Only a Commissioner can confirm this import.", ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        teams, players = await apply_roster_import(
-            self.db, interaction.guild_id, settings["season"], self.rows
+        button.disabled = True
+        await interaction.response.edit_message(
+            content=(
+                f"Roster import accepted. Saving **{len(self.rows)} players** now; "
+                "the 32 roster cards will refresh in the background."
+            ),
+            view=self,
         )
+        try:
+            teams, players = await apply_roster_import(
+                self.db, interaction.guild_id, settings["season"], self.rows
+            )
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Roster import failed: {exc}"[:1900], ephemeral=True
+            )
+            return
         from .team_roles import ensure_team_roles
         from .ownership import initialize_open_teams
         from .open_teams_ui import refresh_open_teams_panel
@@ -340,20 +358,35 @@ class ConfirmRosterImportView(discord.ui.View):
             interaction.guild, self.db, settings["season"]
         )
         await initialize_open_teams(self.db, interaction.guild_id, settings["season"])
-        await refresh_open_teams_panel(interaction.client, self.db, interaction.guild_id)
         await self.db.audit(
             interaction.guild_id, interaction.user.id, "rosters_imported",
             details={"teams": teams, "players": players, "role_errors": role_errors},
         )
-        button.disabled = True
-        await interaction.edit_original_response(view=self)
         await interaction.followup.send(
             f"Imported **{teams} teams** and **{players} roster players**. "
-            f"Created **{created_roles}** missing team roles."
+            f"Created **{created_roles}** missing team roles. "
+            "The Open Teams roster cards are refreshing in the background."
             + (f" Role warnings: {'; '.join(role_errors[:5])}" if role_errors else ""),
             ephemeral=True,
         )
 
+        async def refresh_cards() -> None:
+            try:
+                await refresh_open_teams_panel(
+                    interaction.client, self.db, interaction.guild_id
+                )
+            except Exception:
+                log.exception(
+                    "Open Teams card refresh failed after roster import for guild %s",
+                    interaction.guild_id,
+                )
+
+        task = asyncio.create_task(
+            refresh_cards(),
+            name=f"roster-card-refresh:{interaction.guild_id}:{settings['season']}",
+        )
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
 class ConfirmFixtureImportView(discord.ui.View):
     def __init__(

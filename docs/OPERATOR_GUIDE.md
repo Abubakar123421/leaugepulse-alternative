@@ -1,50 +1,82 @@
 # League Bot Operator Guide
 
-## First-time setup
+## First deployment
 
-1. Invite the bot with the `bot` and `applications.commands` scopes. Enable Server Members intent.
-2. Put the bot role above the league's team roles and grant Manage Roles, Manage Channels, Manage Messages, View Channels, Send Messages, Embed Links, Attach Files, and Read Message History.
-3. Run `/setup` with the league, game, season, timezone, and Commissioner role. It creates/reconnects management channels and creates any missing 32 NFL team roles without duplicates.
-4. Members run `/register` and choose one of the 32 available teams. A commissioner runs `/profile-approve`; approval grants the team role. Registration can happen before the first schedule import.
+1. Deploy the repository with Python 3.11+ and entry file `main.py`.
+2. Add `DISCORD_TOKEN` and optional integration variables from `.env.example` in the host environment manager.
+3. Invite the bot with `bot` and `applications.commands`; enable Server Members intent.
+4. Put the bot role above team roles and grant Manage Roles, Manage Channels, Manage Messages, View Channels, Send Messages, Embed Links, Attach Files, and Read Message History.
 
-## Destination setup
+## First Discord setup
 
-Run `/destinations` after `/setup`. The default channels can be replaced at any time
-with the `set…channel` commands, and weekly game placement is controlled by
-`/setmatchcategory`. Official scores, announcements, streams, weekly spotlight content,
-trades, transfers, open teams, polls, recruiting, and private audit events each have a
-separate saved destination. Changes affect only the current Discord server.
+Run `/setup` with league name, game, season, timezone, and Commissioner role. This saves configuration and creates/reuses team roles; it does not create channels.
+
+Map the server’s existing channels:
+
+- `/setannouncementchannel`
+- `/setscorechannel`
+- `/setstorylinechannel`
+- `/settradechannel`
+- `/setopenteamlist`
+- `/setpollchannel`
+- `/settransactionchannel`
+- `/setstreamchannel`
+- `/setauditchannel`
+- `/setrecruitingchannel` when needed for College Football
+
+Run `/destinations` to verify the routing. Any mapping can be changed later by rerunning its setter. Weekly matchup categories are automatic and have no permanent destination.
+
+## Madden season onboarding
+
+1. `/importrosters` with `output/neonsportz-derived/madden_team_rosters.csv`; review and confirm.
+2. `/syncteamemojis` if the server has team emojis.
+3. Members claim with `/registerteam`, or a commissioner runs `/importmembers` with a CSV containing `team` plus `discord_id` or a unique `discord_username`.
+4. Use `/syncmemberroles` if Discord role synchronization reported failures.
+5. `/importfixtures` with `output/neonsportz-derived/madden_18_week_fixtures.csv`. Use `start_now:True` to create Week 1 and begin the seven-day clock.
+
 ## Weekly operation
 
-1. Upload exactly one current-week CSV with `/import-schedule`. Required columns are `week,away_team,home_team`; optional columns are `away_user_id,home_user_id,game_id`.
-2. Confirm the preview. The bot creates a `Week N` category and one channel per game. Everyone can read it; only both team roles and commissioners can send/react.
-3. Owners use the pinned card:
-   - 📅 schedule, 🔁 counter, ✅ accept
-   - 🏁 submit `away-home` score plus screenshot, ⚠️ dispute
-   - 🏠/✈️ request the corresponding force win, 🤝 fair sim, 🆘 commissioner help
-4. Commissioners use `/week` for the private management dashboard and official decisions. Normal users get a read-only weekly list.
-5. Official results lock their game channels. When every game is final, Advance deletes that week's channels and moves `current_week` forward.
+- Each active week has a top-level `WEEK X MATCHUPS` category.
+- Only assigned owners and commissioners can interact; everyone else is read-only.
+- Reactions schedule/counter/confirm times, submit results, and request outcomes.
+- **Report Dispute** opens a private form whose reason goes to commissioner audit.
+- `/week number:<week>` opens the commissioner dashboard for approvals, force wins, fair simulations, reminders, issue review, and advancement.
+- `/gameoftheweek week:<week> matchup_id:<choice> graphic:<image>` posts the vote graphic to the configured polls channel.
+- Advancement creates the next week first and then removes the old Discord category/channels. Database history is retained.
 
-Scheduling reminders stop as soon as a time is confirmed. They run once daily when more than 24 hours remain, every two hours from 24 to 6 hours, and hourly in the final 6 hours. Delivery slots persist across restarts. Missing owners are reported in `commissioner-audit`.
+If a Game of the Week picker appears empty, enter the `week` option first; the matchup picker filters to that selected week.
 
-## Owner replacement
+## Rosters and owners
 
-Run `/team-release` with a reason. The bot removes the team role, makes the team available, resets only unfinished games, refreshes their matchup cards, and preserves completed games and permanent career history.
+- `/roster team:<team>` and `/playersearch player:<name>` query imported data.
+- Open Teams cards provide **View Team** only. Claims use `/registerteam`.
+- `/team-release` safely removes an owner, reopens eligible unfinished games, and preserves history.
 
-## Closing a season
+## Results
 
-1. Resolve every matchup; `/season-close` refuses while any game is unresolved.
-2. Run `/season-close new_season:<name> champion:<member>` and confirm.
-3. The bot preserves compact game history, ownership, careers, XP, records, and championship data.
-4. It clears members from all team roles, removes temporary season data, preserves configured management destinations and deletes the archived season's matchup channels. The 32 empty roles remain for reuse.
-5. If Discord cleanup is partial, fix permissions and run `/season-cleanup`.
+Owners submit an away-home score with one PNG/JPG/WebP evidence image. The opponent can confirm or dispute; commissioners make the official decision. Approved/forced/sim outcomes post once to final scores and update records/XP.
 
-## Backups and troubleshooting
+## AI and streams
 
-Run `/backup` after imports, advancement, and important rulings. Store downloads outside the host.
+- `/aistatus` checks Gemini readiness without exposing the key.
+- `/aisettings`, `/airecap`, `/aiweek`, and `/weekmvp` control generated content.
+- Gemini is optional; failures never block gameplay.
+- Twitch/YouTube credentials are optional. With blank credentials, the rest of the bot works normally.
 
-- Missing commands: invite with `applications.commands`, then restart.
-- Role assignment fails: place the bot role above all 32 team roles and rerun `/setup`.
-- Missing game channels: confirm the current week's import or have a commissioner run `/week`.
-- A reaction does nothing: use the pinned bot card and confirm the member owns one of the two teams.
-- A reminder did not post: scheduled/final games do not receive scheduling reminders.
+## Season close and backups
+
+1. Resolve all required games and complete/publish the eight season awards.
+2. Run `/backup` and download the file outside the host.
+3. Run `/season-close` and confirm.
+4. If cleanup partially fails, fix Discord permissions and run `/season-cleanup`.
+
+The bot preserves compact results, careers, XP, ownership history, and awards while clearing active operational data and team-role members.
+
+## Troubleshooting
+
+- Missing slash commands: restart and confirm `applications.commands` was included in the invite.
+- Role failures: move the bot role above team roles, then `/syncmemberroles`.
+- Destination failures: rerun the relevant setter and ensure View Channel, Send Messages, and Embed Links.
+- Missing opponent DM: Discord privacy can block DMs; the commissioner audit review remains available.
+- Slow roster import: the confirmation is acknowledged immediately and roster cards refresh in the background.
+- Before replacing host files: download/back up `data/leaguebot.sqlite3`.

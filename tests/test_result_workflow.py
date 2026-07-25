@@ -2,6 +2,7 @@ import aiosqlite
 import pytest
 from types import SimpleNamespace
 
+from leaguebot.channel_workflow import MatchupDisputeView
 from leaguebot.db import Database, MATCHUP_RESULT_COLUMNS
 from leaguebot.result_ui import (
     CommissionerResultReviewView,
@@ -50,6 +51,15 @@ def test_result_decision_views_are_persistent():
         "leaguebot:result:staff:reject:42",
         "leaguebot:result:staff:evidence:42",
     }
+
+def test_matchup_dispute_control_is_persistent():
+    view = MatchupDisputeView(42)
+
+    assert view.timeout is None
+    assert {item.custom_id for item in view.children} == {
+        "leaguebot:matchup:dispute:42",
+    }
+
 
 def test_versioned_result_controls_cannot_target_newer_submissions():
     versioned_opponent = OpponentResultDecisionView(42, 3)
