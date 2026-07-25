@@ -1,6 +1,12 @@
+from types import SimpleNamespace
+
 import pytest
 
-from leaguebot.bot import send_week_dashboard, week_action_autocomplete
+from leaguebot.bot import (
+    selected_matchup_week,
+    send_week_dashboard,
+    week_action_autocomplete,
+)
 from leaguebot.commissioner_ui import (
     CommissionerMatchupActionsView,
     apply_commissioner_outcome,
@@ -19,6 +25,18 @@ async def test_week_action_autocomplete_explains_options():
     assert "away team" in by_value["force_away"].lower()
     assert "neutral" in by_value["fair_sim"].lower()
     assert "next" in by_value["advance"].lower()
+
+
+def test_matchup_picker_uses_week_already_entered_in_command():
+    interaction = SimpleNamespace(namespace=SimpleNamespace(week=11))
+
+    assert selected_matchup_week(interaction, fallback=1) == 11
+
+
+def test_matchup_picker_falls_back_to_current_week():
+    interaction = SimpleNamespace(namespace=SimpleNamespace())
+
+    assert selected_matchup_week(interaction, fallback=7) == 7
 
 
 @pytest.mark.asyncio

@@ -1,151 +1,67 @@
-# Discord League Bot - Transfer Context
+# Current Product Context
 
-## Purpose
+Last updated: 2026-07-25
 
-This repository contains a paid Discord league-management bot being built for a Fiverr client named Josh (`Jantho1994` / `joshanthony1994`).
+## Goal
 
-The bot will be hosted by the developer on bot-hosting.net and must be portable so Josh can receive the complete source code, database, configuration template, backups, and hosting-transfer instructions.
+Deliver a portable Discord league-management bot for Madden and College Football. One Discord application may serve multiple servers, but all settings and records must remain isolated by `guild_id` and, where applicable, `season`.
 
-Do not put real Discord tokens, Twitch secrets, YouTube keys, passwords, or client personal information in this repository.
+The deployment target is bot-hosting.net. The repository is the source of truth and must never contain live credentials or a live SQLite database.
 
-## Client Goal
+## Confirmed Madden design
 
-Josh runs private EA Sports leagues:
+- NeonSportz is not connected as an API. The bot uses prepared roster and fixture CSV snapshots.
+- The supplied Madden roster snapshot contains 32 franchises and 2,074 players.
+- The supplied fixture snapshot contains 272 regular-season games across Weeks 1–18.
+- The imported names include Black Knights (DEN), Condors (NE), and Dragons (DAL).
+- Team ownership lasts for the entire season.
+- Members claim with `/registerteam`; the Open Teams channel is a roster directory only.
+- Commissioners can atomically assign 18–32 members with `/importmembers` using Discord IDs/usernames and team names.
+- `/setup` never creates permanent channels or categories. It saves metadata/roles and preserves existing destination mappings.
+- Permanent outputs are linked through `set...channel` commands and can be remapped after channel reorganization.
+- Every active week uses its own top-level `WEEK X MATCHUPS` category. The bot creates the next week before deleting the old one. There is no permanent Weekly Matchups category.
+- Matchup messages are not pinned.
+- Scheduling and result submission remain reaction-driven. General disputes use a persistent button and private modal; the reason is posted only to commissioner audit.
+- Unresolved games remain in SQLite after their Discord channels are archived and can be decided later from `/week`.
+- Official results, owner history, career records, XP, recaps, and audit records survive weekly cleanup.
+- Team emoji mappings store names, not Discord IDs. Replacing an emoji with the same name requires no database change.
+- Game previews are not automatically posted in matchup channels. Final recaps and weekly content remain available.
+- AI and streaming integrations are optional and cannot block league operations.
 
-- Madden 26, with reuse for Madden 27 and later seasons.
-- College Football 27 and later seasons.
-- The leagues use separate Discord servers.
-- One Discord bot application must serve both servers while isolating all data by Discord guild.
+## Recommended Madden channel routing
 
-Josh will create the College Football server. He does not need to create its channels because `/setup` will create or connect them.
+Channel names are configurable; do not hardcode their IDs.
 
-## Confirmed Current Scope
+- Announcements: `#announcements`
+- Final scores: `#final-scores`
+- Weekly content: `#weekly-recaps`
+- Trades: `#trade-block`
+- Open Teams roster directory: `#open-teams-list`
+- Polls/Game of the Week: `#game-of-the-week`
+- Transactions: `#roster-moves`
+- Streams: `#live-now`
+- Private audit: `#commissioner-audit`
+- Recruiting: optional/unused in Madden
 
-### Setup and settings
+## Reliability invariants
 
-- `/setup` creates or links the league category and required channels.
-- Each guild has independent league name, game, season, week, timezone, advance day/time, channels, commissioner role, reminders, and feature toggles.
-- Interactive League Settings panel.
+- Final statuses: `complete`, `force_home`, `force_away`, `fair_sim`.
+- Player result evidence is private and commissioner-reviewed.
+- Output posts use unique source keys/message IDs to prevent duplicates after retries and restarts.
+- Roster, fixture, and member imports are previewed and atomic.
+- Weekly rollover is restart-safe and guarded against concurrent runs.
+- Failed Discord cleanup remains retryable.
+- Persistent views use stable custom IDs and are restored on startup.
+- Gemini receives only sanitized public league facts, never secrets, evidence, audit content, or private dispute text.
 
-### Profiles and streams
+## Current implementation
 
-- `/register` stores a Discord member's requested team, Twitch, and YouTube information.
-- A commissioner approves team claims.
-- A single user may have different teams in different guilds.
-- Approved stream links appear in matchup posts.
-- Twitch and YouTube live alerts post automatically when credentials are configured.
+Implemented modules include configurable destinations, full-season roster/fixture imports, Open Teams roster cards, self-claim and CSV ownership, team roles, matchup categories/channels, adaptive reminders, result evidence/review, commissioner cases, final-score history, profiles/XP, season close/cleanup, runtime emojis, Game of the Week voting, weekly recaps/rankings, awards, Gemini jobs, and optional stream alerts.
 
-### Guild-scoped output routing
+The automated suite currently contains 54 passing tests before release cleanup. Always rerun the suite after changes rather than relying on this number.
 
-- Every generated output resolves its destination from `guild_settings`; no channel IDs are hardcoded.
-- Commissioners configure matchups, announcements, final scores, streams, weekly spotlight, trades, transactions, open teams, polls, recruiting, and audit destinations with slash commands.
-- `/destinations` is the routing overview and `/createweek` is the idempotent weekly channel creator.
-- Changing the matchup category moves active channels; season rollover preserves configured destination channels and removes season-owned matchup channels only.
-### Madden imported-data and weekly channel workflow
+## Deployment state
 
-- NeonSportz is not connected as an API or live data source. The bot consumes two prepared CSV snapshots derived from the client export.
-- `/importrosters` atomically imports 32 franchises and 2,074 roster players for the active guild/season. Team roles, Open Teams, member imports, claims, matchup permissions, reminders, and AI mappings use those imported franchise identities.
-- `/importfixtures` atomically imports all 272 regular-season fixtures across Weeks 1–18. Scores from the source export are intentionally removed; the Discord league records its own official outcomes.
-- Team claims last for the entire season. They are not reset during weekly rollover.
-- The Open Teams channel contains a pinned summary plus one persistent franchise card per team. Cards show owner/open status and a five-player roster preview, with atomic **Claim Team** and ephemeral paginated **View Team** buttons. Cards restore after bot restarts and refresh after imports, claims, approvals, releases, and season changes.
-- Starting the season creates only the `WEEK 1 MATCHUPS` category. Every seven days the bot creates the next week's category/channels first and deletes the old weekly category/channels.
-- Unresolved games never disappear from SQLite and do not block timed rollover. Commissioners can use the archived `/week number:<n>` dashboard to issue later decisions. Archived dashboards do not recreate deleted channels.
-- Weekly rollover is idempotent, restart-safe, guarded against simultaneous execution, and keeps the current week intact if the next week cannot be fully created. Old-channel cleanup failures are retried automatically.
-- Only both assigned team roles and commissioners can send/react in active matchup channels. Everyone else has read-only access.
-- Player controls remain reaction-driven: schedule, counter, accept, submit result+screenshot, dispute, home/away force-win request, fair sim, and commissioner help.
-- Scheduling reminders are restart-safe: daily above 24h, every two hours from 24–6h, hourly in the final six hours, and stop immediately once scheduled.
-- `/roster` and `/playersearch` expose the imported roster snapshot. Discord team-logo uploads are no longer required or displayed.
-- Commissioner evidence/cases go to the private audit channel. Official results, records, game history, owner history, and career XP survive weekly channel deletion.
-### League modules
+The Git repository must ship without `data/leaguebot.sqlite3`. On first startup, the schema and parent directory are created automatically. The operator then runs `/setup`, maps existing permanent channels, imports the roster snapshot, assigns owners, and imports fixtures.
 
-Madden:
-
-- Trade tracking.
-- Trade block.
-- Open Rosters/Open Teams.
-
-College Football:
-
-- Transfer tracking.
-- Open Rosters/Open Teams.
-
-Both:
-
-- Announcements.
-- Game of the Week.
-- Players of the Week.
-- Twitch and YouTube alerts.
-- Per-module on/off controls.
-
-Trade/transfer tracking covers data entered or imported into this bot. Do not promise undocumented EA or NeonSportz API access.
-
-### Interactive help
-
-`/help` opens an ephemeral help center with:
-
-- Category and command select menus.
-- Getting Started.
-- Player Registration.
-- Matchups and Scheduling.
-- Player Commands.
-- Commissioner Commands.
-- Schedule Imports.
-- Trades and Transfers.
-- Streams and Profiles.
-- League Settings.
-- Troubleshooting.
-- Home, Previous, and Next buttons.
-- Permission- and feature-aware command visibility.
-- Details, examples, and outcomes for commands/forms.
-- Automatic fallback entries generated from registered slash-command metadata.
-
-## Madden Season Lifecycle and Careers
-
-- Every official result records permanent, guild-isolated player career totals and an idempotent XP event.
-- `/profile` shows career and season history; `/leaderboard` ranks XP; `/season-history` displays archived tournament results.
-- `/season-close` refuses unresolved games, preserves compact results and team ownership, clears active-season data, rotates Discord channels, and deletes old threads/evidence.
-- Cleanup state is recorded so `/season-cleanup` can recover safely from partial Discord permission or network failures.
-- Team release and departed-member workflows preserve historical ownership while reopening only unfinished games.
-## Explicitly Out of Current Scope
-
-The architecture should allow these later, but they are not part of the current paid delivery:
-
-- Power Rankings.
-- Storyline posts.
-- Recruiting posts.
-- Playoff picture.
-- AI-generated stories.
-- Automatic game recaps.
-
-## Information Still Needed
-
-From Josh:
-
-- College Football server and permission to install the bot.
-- League names, timezone, default advance schedule, season, and current week.
-- Commissioner accounts/role.
-- Madden team assignments.
-- A newly prepared roster snapshot and full fixture snapshot for each new season.
-- College Football assignments and schedule when ready.
-- Preferred channel names, if any.
-
-From the developer/host:
-
-- Discord application and bot token.
-- bot-hosting.net deployment access.
-- Twitch Developer client ID and secret.
-- YouTube Data API key.
-- Bot name, avatar, and branding.
-
-## Project Location and Deliverables
-
-Original Windows project directory:
-
-`C:\Users\ABUBAKAR\Desktop\the bot`
-
-The client PDF must also be copied to:
-
-`C:\Users\ABUBAKAR\Documents\Codex\2026-07-22\amke\outputs\Discord_League_Bot_Project_Plan.pdf`
-
-When transferring to another PC, copy the entire `the bot` folder, including this file and `IMPLEMENTATION.md`. Do not copy `.env` if it contains real secrets; recreate it securely from `.env.example`.
-
+Read `AGENTS.md` first in future coding sessions. Use `IMPLEMENTATION.md` for module ownership and `docs/OPERATOR_GUIDE.md` for the live command sequence.

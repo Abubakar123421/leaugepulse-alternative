@@ -83,7 +83,7 @@ def build() -> Path:
             styles["Callout"],
         ),
         Spacer(1, 0.32 * inch),
-        Paragraph("Prepared for Josh", styles["CoverSub"]),
+        Paragraph("Prepared for League Operations", styles["CoverSub"]),
         Paragraph("Current delivery scope - July 2026", styles["CoverSub"]),
         PageBreak(),
     ]
@@ -102,7 +102,7 @@ def build() -> Path:
         [
             "Reusable for Madden 26, Madden 27 and later seasons.",
             "Reusable for College Football 27 and later seasons.",
-            "Josh creates the College Football Discord server, but he does not need to "
+            "The operator creates the College Football Discord server, but he does not need to "
             "create its league channels. The setup command creates or connects them.",
             "The complete source, database, configuration template, backups, and transfer "
             "instructions are portable to another host.",

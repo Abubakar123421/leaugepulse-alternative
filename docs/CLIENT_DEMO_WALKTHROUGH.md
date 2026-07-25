@@ -1,68 +1,43 @@
-# Madden League Bot — Client Demo Walkthrough
+# Madden League Bot Client Demo
 
-Use one commissioner account and two normal accounts. Prepare one logo per team, one final-score screenshot, and `templates/madden-client-demo.csv`.
+Prepare one commissioner account, two normal accounts, the supplied roster/fixture CSVs, one Game of the Week image, and one final-score screenshot.
 
-## 1. Setup and roles
+## 1. Setup and destinations
 
-Run `/setup`:
+Run `/setup` with the league name, `Madden 26`, season, timezone, and Commissioner role. Show that no permanent channels are created.
 
-- league_name: `Jantho Madden Demo`
-- game: `Madden 26`
-- season: `Demo Season 1`
-- timezone: `America/New_York`
-- commissioner_role: `@Commissioner`
+Map existing channels with the destination setters, then run `/destinations` to show that outputs can be moved without code changes.
 
-Show that the bot created all 32 no-permission NFL team roles and that `commissioner-audit` is visible only to commissioners. The bot role must be above the team roles.
+## 2. Import league data
 
-## 2. Register owners
+1. `/importrosters` with `madden_team_rosters.csv`; confirm the 32-team/2,074-player preview.
+2. `/setopenteamlist` and show one roster card per team. Open **View Team** to demonstrate private pagination.
+3. `/importfixtures` with `madden_18_week_fixtures.csv`, `start_now:True`; confirm 272 fixtures and Week 1 creation.
 
-Player A runs `/register team:49ers`; Player B runs `/register team:Cowboys`. Show that case does not matter and an invalid/spelled-wrong team produces an embed listing available, pending, and taken teams.
+## 3. Assign owners
 
-Approve both with `/profile-approve`. Show:
+Have both players run `/registerteam` for available teams. Show immediate ownership, roles, Open Teams updates, and matchup permissions. Mention `/importmembers` as the commissioner’s bulk alternative.
 
-- each owner receives the matching team role;
-- each receives the logo-upload DM;
-- the audit channel records staff/player actions.
+## 4. Schedule a game
 
-## 3. Import Week 1
+In the matchup channel, Player A reacts with the calendar and enters `YYYY-MM-DD HH:MM`. Player B accepts or counters. Show the localized confirmed time and that reminders stop once scheduled.
 
-Run `/import-schedule`, attach `templates/madden-client-demo.csv`, review, and confirm.
+## 5. Report an issue
 
-Expected: a Week 1 category and `#49ers-at-cowboys` are created. The channel is publicly readable, but only the two team owners and commissioners can send messages or react. The pinned card shows owners, roles, records, logos, deadline, schedule/result state, and reaction instructions.
+Click **Report Dispute**, enter a reason in the popup, and show the numbered private case in commissioner audit. It does not require a previously submitted score.
 
-## 4. Schedule using reactions
+## 6. Submit and approve a result
 
-Player A reacts 📅. When prompted, type a future time before the deadline:
+An owner submits the away-home score and attaches a PNG/JPG/WebP screenshot. Show private evidence review, opponent confirmation/dispute, commissioner approval through `/week`, exactly one final-score post, and updated `/profile`/`/leaderboard` data.
 
-`2026-08-01 20:00`
+## 7. Game of the Week
 
-The bot processes/deletes the response and shows the pending time. Player B reacts 🔁 to demonstrate a counter, types another time, then Player A reacts ✅. The pinned card becomes `Scheduled`, shows Discord's localized date/time plus the league timezone, and scheduling reminders stop.
+Run `/gameoftheweek`, enter the week first, choose one of that week’s matchup IDs, and attach artwork. Show the two team-emoji voting reactions in the configured Game of the Week channel.
 
-## 5. Submit and approve a result
+## 8. Advance
 
-Player A reacts 🏁. In the channel, type `24-17` and attach the prepared screenshot. The evidence is copied privately to `commissioner-audit`; only the score/status is shown publicly.
+Use the `/week` commissioner dashboard to advance. Show that the bot creates `WEEK 2 MATCHUPS` before deleting Week 1 Discord channels, while records and unresolved cases remain saved.
 
-Player B reacts ✅ to confirm (or demonstrate ⚠️ to open a dispute). The commissioner runs `/week number:1`, selects the game, chooses **Approve Submitted Score**, and confirms.
+## 9. Reliability and transfer
 
-Expected: the official result is announced in the game channel, standings/XP update, and the game channel becomes read-only for players. Show `/profile` and `/leaderboard`.
-
-## 6. Commissioner cases
-
-Before finalizing a spare test game, demonstrate:
-
-- 🏠 home force-win request
-- ✈️ away force-win request
-- 🤝 fair simulation request
-- 🆘 commissioner help
-
-Each creates a private audit case and a short public acknowledgement without pinging commissioners in the game channel. The commissioner resolves outcomes through `/week`.
-
-## 7. Advance and next week
-
-Once every Week 1 game is official, run `/week number:1`, choose **Advance to Week 2**, and confirm. The Week 1 channels/category are deleted while results remain in the database.
-
-Upload `templates/madden-client-demo-week-2.csv` only after advancement. This demonstrates that week numbers are not hardcoded and schedules are imported one week at a time.
-
-## 8. Season rollover
-
-Explain that `/season-close` requires every game to be final. When confirmed, it preserves compact game/career/ownership history, clears owners from team roles, preserves configured destinations, deletes temporary matchup channels, and starts a clean season. The empty 32 team roles are reused rather than duplicated.
+Explain restart-safe reminders, idempotent output posts, automatic migrations, backups, multi-server isolation, and configurable destinations. The hosted release starts with no database and creates it automatically.

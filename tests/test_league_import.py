@@ -129,7 +129,7 @@ async def test_rollover_opens_next_week_and_keeps_unresolved_game(tmp_path, monk
     assert audit["status"] == "complete"
     assert audit["unresolved_count"] == unresolved["n"]
 @pytest.mark.asyncio
-async def test_individual_team_cards_show_roster_and_claim_state(tmp_path):
+async def test_individual_team_cards_show_roster_and_registration_state(tmp_path):
     db = Database(tmp_path / "cards.sqlite3")
     await db.initialize()
     await db.settings(456)
@@ -145,9 +145,9 @@ async def test_individual_team_cards_show_roster_and_claim_state(tmp_path):
     assert "Roster" in _team_card_embed(card, "1").fields[1].name
 
     view = TeamCardView(456, card["external_team_id"], is_open=True)
-    assert len(view.children) == 2
-    assert view.children[0].item.custom_id.startswith("leaguebot:team-card:claim:456:")
-    assert view.children[1].item.custom_id.startswith("leaguebot:team-card:roster:456:")
+    assert len(view.children) == 1
+    assert view.children[0].item.label == "View Team"
+    assert view.children[0].item.custom_id.startswith("leaguebot:team-card:roster:456:")
 
     await claim_team(db, 456, "1", 999, "49ers")
     updated = next(item for item in await _team_card_data(db, 456, "1") if item["team_name"] == "49ers")

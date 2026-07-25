@@ -17,7 +17,7 @@ from .team_emojis import emoji_named, sync_team_emojis
 from .weekly_content import upsert_week_mvp
 from .channel_workflow import (
     create_week_matchup_channels, handle_matchup_message, handle_raw_reaction,
-    refresh_matchup_message,
+    MatchupDisputeButton, refresh_matchup_message,
 )
 from .commissioner_ui import (
     AdvanceWeekConfirmationView,
@@ -60,7 +60,7 @@ from .member_import import (
     ConfirmMemberImportView, parse_member_csv, validate_import_conflicts,
 )
 from .open_teams_ui import (
-    ClaimTeamCardButton, ViewRosterCardButton, post_open_teams_panel, refresh_open_team_card, refresh_open_teams_panel,
+    ViewRosterCardButton, post_open_teams_panel, refresh_open_team_card, refresh_open_teams_panel,
 )
 from .ownership import (
     OwnershipError, claim_team, initialize_open_teams, sync_all_member_roles,
@@ -87,6 +87,13 @@ async def week_action_autocomplete(
         for label, value in WEEK_ACTION_CHOICES
         if not query or query in label.casefold() or query in value
     ][:25]
+
+
+def selected_matchup_week(interaction: discord.Interaction, fallback: int) -> int:
+    """Use the week already entered in a slash command, or the current week."""
+    namespace = getattr(interaction, "namespace", None)
+    selected = getattr(namespace, "week", None)
+    return selected if isinstance(selected, int) and selected > 0 else fallback
 
 
 async def send_week_dashboard(followup, embed: discord.Embed, view) -> None:
@@ -135,10 +142,10 @@ class LeagueBot(discord.Client):
         await backfill_active_leagues(self.db)
         await self.ai.start()
         register_commands(self)
-        self.add_dynamic_items(ClaimTeamCardButton)
         self.add_dynamic_items(ViewRosterCardButton)
         self.add_dynamic_items(ScheduleDecisionButton)
         self.add_dynamic_items(OpponentResultDecisionButton)
+        self.add_dynamic_items(MatchupDisputeButton)
         self.add_dynamic_items(CommissionerResultActionButton)
         await self.tree.sync()
         self.reminders.start()
@@ -231,7 +238,10 @@ async def deny_dm(interaction: discord.Interaction) -> bool:
 def register_commands(bot: LeagueBot) -> None:
     tree, db = bot.tree, bot.db
 
-    @tree.command(name="setup", description="Create or connect this server's league channels.")
+    @tree.command(
+        name="setup",
+        description="Configure league details and roles without creating permanent channels.",
+    )
     @app_commands.describe(
         league_name="Name displayed by the bot",
         game="Madden 26, College Football 27, or a future season",
@@ -262,66 +272,40 @@ def register_commands(bot: LeagueBot) -> None:
         guild = interaction.guild
         roles_created, role_errors = await ensure_madden_team_roles(guild, db)
         current = await db.settings(guild.id)
-        category = guild.get_channel(current.get("category_id") or 0)
-        if not isinstance(category, discord.CategoryChannel):
-            category = await guild.create_category(f"{league_name} League")
-        matchup_category = guild.get_channel(current.get("matchup_category_id") or 0)
-        if not isinstance(matchup_category, discord.CategoryChannel):
-            matchup_category = await guild.create_category("Weekly Matchups")
-
-        async def channel(current_id: int | None, name: str) -> discord.TextChannel:
-            existing = guild.get_channel(current_id or 0)
-            if isinstance(existing, discord.TextChannel):
-                return existing
-            return await guild.create_text_channel(name, category=category)
-
-        announcements = await channel(current.get("announcements_channel_id"), "announcements")
-        final_scores = await channel(current.get("final_scores_channel_id"), "final-scores")
-        storylines = await channel(current.get("storyline_channel_id"), "weekly-spotlight")
-        trades = await channel(current.get("trade_channel_id"), "trade-block")
-        open_teams = await channel(current.get("open_teams_channel_id"), "open-teams")
-        polls = await channel(current.get("polls_channel_id"), "league-polls")
-        recruiting = await channel(current.get("recruiting_channel_id"), "recruiting")
-        transactions = await channel(current.get("transactions_channel_id"), "transactions")
-        streams = await channel(current.get("streams_channel_id"), "live-streams")
-        audit = await channel(current.get("audit_channel_id"), "commissioner-audit")
-        audit_overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            commissioner_role: discord.PermissionOverwrite(
-                view_channel=True,
-                send_messages=True,
-                read_message_history=True,
-            ),
-        }
-        if guild.me:
-            audit_overwrites[guild.me] = discord.PermissionOverwrite(
-                view_channel=True,
-                send_messages=True,
-                embed_links=True,
-                attach_files=True,
-                read_message_history=True,
-            )
-        await audit.edit(
-            overwrites=audit_overwrites,
-            reason=f"League audit access assigned to {commissioner_role.name}",
+        destination_fields = (
+            "announcements_channel_id",
+            "final_scores_channel_id",
+            "storyline_channel_id",
+            "trade_channel_id",
+            "open_teams_channel_id",
+            "polls_channel_id",
+            "transactions_channel_id",
+            "streams_channel_id",
+            "audit_channel_id",
+        )
+        configured_destinations = sum(
+            1 for field in destination_fields if current.get(field)
         )
         await db.update_settings(
-            guild.id, league_name=league_name, game=game, season=season, timezone=timezone,
-            commissioner_role_id=commissioner_role.id, category_id=category.id,
-            matchup_category_id=matchup_category.id, matchups_channel_id=None,
-            announcements_channel_id=announcements.id,
-            final_scores_channel_id=final_scores.id, storyline_channel_id=storylines.id,
-            trade_channel_id=trades.id, open_teams_channel_id=open_teams.id,
-            polls_channel_id=polls.id, recruiting_channel_id=recruiting.id,
-            transactions_channel_id=transactions.id, streams_channel_id=streams.id,
-            audit_channel_id=audit.id,
+            guild.id,
+            league_name=league_name,
+            game=game,
+            season=season,
+            timezone=timezone,
+            commissioner_role_id=commissioner_role.id,
+            category_id=None,
+            matchup_category_id=None,
+            matchups_channel_id=None,
         )
         await db.audit(guild.id, interaction.user.id, "setup")
         await interaction.followup.send(
-            f"Setup complete for **{league_name}**. I created or connected the management channels "
-            f"under {category.mention}, with weekly games under {matchup_category.mention}. Madden team roles created: **{roles_created}**. "
+            f"Setup saved for **{league_name}** without creating permanent channels or "
+            f"categories. Existing destination mappings preserved: "
+            f"**{configured_destinations}/{len(destination_fields)}**. "
+            f"Madden team roles created: **{roles_created}**. "
             + (f"Role errors: {len(role_errors)}. " if role_errors else "")
-            + "Use `/settings` to review the configuration.",
+            + "Weekly advancement creates and removes `WEEK X MATCHUPS` categories "
+            "automatically. Use `/destinations` to review permanent channels.",
             ephemeral=True,
         )
 
@@ -359,43 +343,6 @@ def register_commands(bot: LeagueBot) -> None:
             )
         await interaction.response.send_message(
             f"**{label}** will now post in {channel.mention}.{warning}",
-            ephemeral=True,
-        )
-
-    @tree.command(name="setmatchcategory", description="Choose the category for weekly matchup channels.")
-    async def set_match_category(
-        interaction: discord.Interaction, category: discord.CategoryChannel
-    ) -> None:
-        if await deny_dm(interaction):
-            return
-        settings = await db.settings(interaction.guild_id)
-        if not await require_commissioner(interaction, settings):
-            return
-        await db.update_settings(interaction.guild_id, matchup_category_id=category.id)
-        active = await db.fetchall(
-            """SELECT channel_id FROM matchups WHERE guild_id=? AND season=?
-               AND status NOT IN ('complete','force_home','force_away','fair_sim')""",
-            (interaction.guild_id, settings["season"]),
-        )
-        moved = 0
-        move_errors = 0
-        for row in active:
-            game_channel = interaction.guild.get_channel(row["channel_id"] or 0)
-            if isinstance(game_channel, discord.TextChannel) and game_channel.category_id != category.id:
-                try:
-                    await game_channel.edit(category=category, reason="Matchup destination updated")
-                    moved += 1
-                except (discord.Forbidden, discord.HTTPException):
-                    move_errors += 1
-        await db.audit(
-            interaction.guild_id, interaction.user.id, "destination_updated",
-            target_type="category", target_id=str(category.id),
-            details={"destination": "matchup_category_id"},
-        )
-        await interaction.response.send_message(
-            f"Weekly matchup channels will now be created under **{category.name}**. "
-            f"Moved **{moved}** active channel(s)."
-            + (f" **{move_errors}** could not be moved because of permissions." if move_errors else ""),
             ephemeral=True,
         )
 
@@ -481,7 +428,7 @@ def register_commands(bot: LeagueBot) -> None:
             f"The persistent Open Teams dashboard is ready in {channel.mention}.", ephemeral=True
         )
 
-    @tree.command(name="setopenteamlist", description="Configure and post the persistent Open Teams dashboard.")
+    @tree.command(name="setopenteamlist", description="Post the persistent team roster directory.")
     async def set_open_team_list(
         interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -534,7 +481,11 @@ def register_commands(bot: LeagueBot) -> None:
             target_id = settings.get(field)
             target = interaction.guild.get_channel(target_id or 0)
             if target is None:
-                value = "Not configured"
+                value = (
+                    "Automatic `WEEK X MATCHUPS` categories"
+                    if field == "matchup_category_id"
+                    else "Not configured"
+                )
             elif is_category:
                 value = f"**{target.name}** (category)"
             else:
@@ -1460,10 +1411,13 @@ def register_commands(bot: LeagueBot) -> None:
         if interaction.guild_id is None:
             return []
         settings = await db.settings(interaction.guild_id)
+        selected_week = selected_matchup_week(
+            interaction, int(settings["current_week"])
+        )
         rows = await db.fetchall(
             """SELECT id,week,away_team,home_team FROM matchups
-               WHERE guild_id=? AND season=? ORDER BY week,id""",
-            (interaction.guild_id, settings["season"]),
+               WHERE guild_id=? AND season=? AND week=? ORDER BY id""",
+            (interaction.guild_id, settings["season"], selected_week),
         )
         query = current.casefold().strip()
         choices = []

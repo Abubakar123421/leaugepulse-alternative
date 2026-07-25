@@ -7,7 +7,7 @@ import discord
 
 from .db import Database
 from .helpers import iso_now
-from .ownership import OwnershipError, claim_team, initialize_open_teams, sync_assignment_discord
+from .ownership import initialize_open_teams
 from .registration import normalize_team_name
 from .team_roles import active_franchises, active_team_names
 from .team_emojis import team_emoji
@@ -28,9 +28,9 @@ async def open_teams_embed(db: Database, guild_id: int, season: str) -> discord.
     embed = discord.Embed(
         title="\N{AMERICAN FOOTBALL} Open Teams",
         description=(
-            "Every franchise has an individual card below. Use **Claim Team** to take an "
-            "available franchise for the full season, or **View Team** to inspect "
-            "its imported players. Claims are immediate and limited to one team per member."
+            "Every franchise has an individual roster card below. Use **View Team** "
+            "to inspect every imported player privately. To claim an available "
+            "franchise for the season, use `/registerteam`."
         ),
         color=discord.Color.green(),
     )
@@ -202,75 +202,6 @@ class RosterPagerView(discord.ui.View):
         )
 
 
-class ClaimTeamCardButton(
-    discord.ui.DynamicItem[discord.ui.Button],
-    template=r"leaguebot:team-card:claim:(?P<guild_id>\d+):(?P<team_id>[^:]+)",
-):
-    def __init__(self, guild_id: int, team_id: str, *, disabled: bool = False):
-        self.guild_id = guild_id
-        self.team_id = team_id
-        super().__init__(discord.ui.Button(
-            label="Claim Team",
-            emoji="\N{WHITE HEAVY CHECK MARK}",
-            style=discord.ButtonStyle.success,
-            custom_id=f"leaguebot:team-card:claim:{guild_id}:{team_id}",
-            disabled=disabled,
-        ))
-
-    @classmethod
-    async def from_custom_id(cls, interaction, item, match: re.Match[str], /):
-        return cls(int(match["guild_id"]), match["team_id"], disabled=item.disabled)
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if interaction.guild_id != self.guild_id:
-            await interaction.response.send_message("This team card belongs to another server.", ephemeral=True)
-            return
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        db: Database = interaction.client.db
-        settings = await db.settings(self.guild_id)
-        franchise = await db.fetchone(
-            """SELECT team_name FROM franchises WHERE guild_id=? AND season=?
-               AND external_team_id=?""",
-            (self.guild_id, settings["season"], self.team_id),
-        )
-        team_name = franchise["team_name"] if franchise else self.team_id
-        try:
-            assignment = await claim_team(
-                db, self.guild_id, settings["season"], interaction.user.id,
-                team_name, source="self_claim", require_open=True,
-            )
-        except OwnershipError as exc:
-            await interaction.edit_original_response(content=str(exc))
-            return
-        await interaction.edit_original_response(
-            content=(
-                f"✅ **{assignment.team_name} claimed.** Your ownership is secured; "
-                "I’m applying the team role and matchup updates now."
-            )
-        )
-        errors = await sync_assignment_discord(
-            interaction.client, db, interaction.guild, assignment
-        )
-        await db.audit(
-            self.guild_id, interaction.user.id, "team_self_claimed",
-            target_type="team", target_id=assignment.team_name,
-            details={"external_team_id": assignment.external_team_id, "role_sync_errors": errors},
-        )
-        await refresh_open_team_card(
-            interaction.client,
-            db,
-            self.guild_id,
-            assignment.external_team_id or assignment.team_name,
-        )
-        message = (
-            f"You now own **{assignment.team_name}** for Season {settings['season']}. "
-            "The franchise card, team role, matchup permissions and reminders were updated."
-        )
-        if errors:
-            message += "\n\nRepair warnings with `/syncmemberroles`:\n" + "\n".join(errors[:5])
-        await interaction.edit_original_response(content=message[:1900])
-
-
 class ViewRosterCardButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"leaguebot:team-card:roster:(?P<guild_id>\d+):(?P<team_id>[^:]+)",
@@ -324,7 +255,6 @@ class ViewRosterCardButton(
 class TeamCardView(discord.ui.View):
     def __init__(self, guild_id: int, team_id: str, *, is_open: bool):
         super().__init__(timeout=None)
-        self.add_item(ClaimTeamCardButton(guild_id, team_id, disabled=not is_open))
         self.add_item(ViewRosterCardButton(guild_id, team_id))
 
 
@@ -337,7 +267,7 @@ async def post_open_teams_panel(
     await _retire_old_panel(db, guild, settings)
     header = await channel.send(embed=await open_teams_embed(db, guild.id, season))
     try:
-        await header.pin(reason="Persistent league franchise selection panel")
+        await header.pin(reason="Persistent league roster directory")
     except (discord.Forbidden, discord.HTTPException):
         pass
     await db.update_settings(

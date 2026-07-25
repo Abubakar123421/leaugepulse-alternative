@@ -1,39 +1,71 @@
-# bot-hosting.net and Source Transfer
+# bot-hosting.net Deployment and Transfer
 
-## Upload
+The repository is prepared for a fresh database deployment and intentionally excludes `.env`, SQLite files, logs, PIDs, caches, backups, and virtual environments.
 
-Upload this project as a ZIP or Git repository. Do not include `.venv`,
-`__pycache__`, `.pytest_cache`, or a real `.env` file.
+## Create the deployment
 
-Configure:
+1. In bot-hosting.net, create an **Application** deployment.
+2. Select GitHub as the source (or upload a ZIP) and choose Python 3.11 or newer.
+3. Keep the project files in the deployment root.
+4. Set **Entry File (`STARTUP_FILE`)** to `main.py`.
+5. Keep `requirements.txt` in the root. The platform reads it during startup; do not type `pip install` into the console.
+6. Add environment variables from `.env.example` in the host panel.
+7. Start the deployment and inspect console logs for command sync and the connected guild count.
 
-- Startup file: `main.py`
-- Python version: 3.11 or newer
-- Package file: `requirements.txt`
-- Persistent directory: `data/`
+Official references:
 
-Create environment variables from `.env.example`. `DISCORD_TOKEN` is required.
-Twitch and YouTube values are optional. Secrets belong in the hosting control
-panel, never in source files or support messages.
+- https://bot-hosting.net/docs/guides/create-a-server
+- https://bot-hosting.net/docs/guides/set-up-a-server
+- https://bot-hosting.net/docs/guides/clone-a-github-repository
 
-## Before transfer
+## Required environment
 
-Include:
+```text
+DISCORD_TOKEN=<new token>
+DATABASE_PATH=data/leaguebot.sqlite3
+BACKUP_DIR=data/backups
+LOG_LEVEL=INFO
+STREAM_POLL_SECONDS=180
+REMINDER_POLL_SECONDS=300
+AI_ENABLED=true
+AI_DAILY_LIMIT=100
+GEMINI_MODEL=gemini-2.5-flash
+```
 
-- Complete source tree.
-- `requirements.txt` and `.env.example`.
-- The latest database backup, transferred privately.
-- README and both guides.
-- `Discord_League_Bot_Project_Plan.pdf`.
+Optional secrets:
 
-Do not include a live `.env` file. The recipient should create new credentials or
-receive them through a secure password-sharing method. Revoke developer-owned
-credentials after the handoff is confirmed.
+```text
+GEMINI_API_KEY=
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
+YOUTUBE_API_KEY=
+```
 
-## Restore
+Use the host’s secret/environment manager. Never upload a populated `.env`.
 
-Place the selected backup at the path configured by `DATABASE_PATH` (the default
-is `data/leaguebot.sqlite3`), restore environment variables, install packages, and
-start `main.py`. Because Discord channel and role IDs are stored in the database,
-the same database should only be restored for the same Discord servers.
+## First startup
 
+No database is included. `Database.initialize()` creates `data/leaguebot.sqlite3` and applies the complete schema automatically. After the bot connects:
+
+1. Run `/setup`.
+2. Map existing permanent channels with the destination setters.
+3. Import rosters.
+4. Assign owners.
+5. Import fixtures with `start_now:True`.
+
+## Updating from GitHub
+
+The bot-hosting.net GitHub sync offers replace and merge strategies. A replace-style sync can remove host-only runtime files. Before every update:
+
+1. Stop or pause league-changing operations.
+2. Run `/backup` and download the backup.
+3. Save `data/leaguebot.sqlite3` through SFTP/file manager or platform backup.
+4. Use merge-style sync for normal code updates.
+5. Restart and check logs.
+6. Run `/destinations` and a read-only command such as `/roster`.
+
+Never store the production database or backup in Git.
+
+## Transfer checklist
+
+Transfer through GitHub or a ZIP containing source, CSV snapshots, templates, and Markdown guides. Exclude `.env`, `data/`, `.venv`, caches, and logs. Rotate developer-owned credentials after the new host is confirmed.

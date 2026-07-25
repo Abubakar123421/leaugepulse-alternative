@@ -4,7 +4,7 @@ import pytest
 
 from leaguebot.awards import AWARD_CATEGORIES, awards_ready, set_season_award
 from leaguebot.db import Database
-from leaguebot.open_teams_ui import ViewRosterCardButton
+from leaguebot.open_teams_ui import TeamCardView, ViewRosterCardButton
 from leaguebot.team_emojis import sync_team_emojis, team_emoji
 from leaguebot.weekly_content import weekly_facts
 
@@ -93,3 +93,8 @@ async def test_all_awards_must_be_published_before_season_close(tmp_path):
 def test_open_team_card_uses_view_team_label():
     item = ViewRosterCardButton(1, "team")
     assert item.item.label == "View Team"
+
+
+def test_team_card_is_roster_browsing_only() -> None:
+    view = TeamCardView(1, "team-1", is_open=True)
+    assert [item.item.label for item in view.children] == ["View Team"]
