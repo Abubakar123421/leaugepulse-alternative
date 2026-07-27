@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Legacy — The Madden League Operations Bot for Discord</title>
+  <meta name="description" content="Legacy runs your Madden league on Discord: 32 franchises, automated weekly matchup rooms, evidence-backed results, AI recaps, and careers that outlive seasons." />
+  <meta property="og:title" content="Legacy — Madden League Operations" />
+  <meta property="og:description" content="Run your Madden league like a dynasty. Rosters, fixtures, matchup rooms, rulings, and season history — fully automated on Discord." />
+  <meta property="og:image" content="assets/img/legacy-banner.jpg" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body data-page="home">
+
+  <div class="scene"></div>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div>
+
+  <!-- ═══ NAV ═══ -->
+  <header class="nav-shell">
+    <div class="wrap">
+      <nav class="nav">
+        <a class="nav-logo" href="index.html">
+          <img src="assets/img/logo-128.png" alt="Legacy shield logo" />
+          <strong>LEGACY</strong>
+        </a>
+        <div class="nav-links">
+          <a href="index.html" data-nav="home">Home</a>
+          <a href="commands.html" data-nav="commands">Commands</a>
+          <a href="docs.html" data-nav="docs">Docs</a>
+          <a href="faq.html" data-nav="faq">FAQ</a>
+        </div>
+        <a class="btn btn-gold btn-sm nav-cta" href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+        <button class="nav-burger" aria-label="Menu"><span></span><span></span><span></span></button>
+      </nav>
+    </div>
+  </header>
+  <div class="mobile-menu">
+    <a href="index.html" data-nav="home">Home</a>
+    <a href="commands.html" data-nav="commands">Commands</a>
+    <a href="docs.html" data-nav="docs">Docs</a>
+    <a href="faq.html" data-nav="faq">FAQ</a>
+    <a href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord →</a>
+  </div>
+
+  <!-- ═══ HERO (scroll-scrubbed) ═══ -->
+  <div class="hero-track">
+    <section class="hero">
+      <div class="hero-media"><canvas aria-hidden="true"></canvas></div>
+
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <span class="kicker">Discord league operations · Madden</span>
+          <h1 class="h-display">Run your Madden league like a <span class="grad-text">dynasty</span>.</h1>
+          <p class="lead">Legacy runs the operations — rosters, fixtures, matchup rooms, evidence-backed results, and permanent season history — so your commissioners can run the drama.</p>
+          <div class="hero-ctas">
+            <a class="btn btn-gold" href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+            <a class="btn btn-ghost" href="commands.html">Explore 50 commands</a>
+            <span class="hero-note"><span class="dot"></span> Production release · Built for Madden 26 leagues</span>
+          </div>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="hero-ring"></div>
+          <div class="hero-bob"><img class="hero-shield" src="assets/img/legacy-logo.png" alt="" /></div>
+        </div>
+      </div>
+
+      <div class="hero-beat" aria-hidden="true">
+        <div>
+          <h2>Every snap. Every ruling.<br /><span class="grad-text">On the record.</span></h2>
+          <p>Official results post exactly once. Careers accrue forever. Seasons archive clean.</p>
+        </div>
+      </div>
+      <div class="hero-scroll-cue"><div class="mouse"></div><span>Scroll</span></div>
+    </section>
+  </div>
+
+  <!-- ═══ STATS ═══ -->
+  <div class="wrap stats reveal">
+    <div class="glass glass-strong stats-grid">
+      <div class="stat"><b data-count="32">0</b><span>Franchises</span></div>
+      <div class="stat"><b data-count="2074">0</b><span>Players tracked</span></div>
+      <div class="stat"><b data-count="272">0</b><span>Season fixtures</span></div>
+      <div class="stat"><b data-count="50">0</b><span>Slash commands</span></div>
+      <div class="stat"><b data-count="18">0</b><span>Week schedule</span></div>
+    </div>
+  </div>
+
+  <!-- ═══ FEATURES ═══ -->
+  <section class="section" id="features">
+    <div class="wrap">
+      <div class="center reveal">
+        <span class="kicker">Why Legacy</span>
+        <h2 class="h-section">A full front office, <span class="grad-text">zero spreadsheets</span></h2>
+        <p class="lead">Everything a competitive Madden league needs to run an 18-week season — built into one bot, isolated per server and per season.</p>
+      </div>
+      <div class="grid-3">
+        <article class="glass card-hover feature reveal" style="--d:.0s">
+          <div class="f-icon"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#calendar"></use></svg></div>
+          <h3 class="h-card">Automated week engine</h3>
+          <p>One <b>WEEK X MATCHUPS</b> category at a time. Rollover creates the next week before removing the last — your history never lives in channels.</p>
+          <a class="f-link" href="docs.html#lifecycle">Weekly lifecycle →</a>
+        </article>
+        <article class="glass card-hover feature reveal" style="--d:.07s">
+          <div class="f-icon"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#download"></use></svg></div>
+          <h3 class="h-card">One-shot season imports</h3>
+          <p>32 rosters, 2,074 players, and 272 fixtures land from prepared CSVs — with all-or-nothing validation and private previews before anything applies.</p>
+          <a class="f-link" href="docs.html#imports">CSV pipeline →</a>
+        </article>
+        <article class="glass card-hover feature reveal" style="--d:.14s">
+          <div class="f-icon"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#scale"></use></svg></div>
+          <h3 class="h-card">Evidence-backed results</h3>
+          <p>Score + screenshot submissions, opponent confirmation, numbered dispute cases, and commissioner rulings that post to final-scores exactly once.</p>
+          <a class="f-link" href="docs.html#matchups">Result workflow →</a>
+        </article>
+        <article class="glass card-hover feature reveal" style="--d:.0s">
+          <div class="f-icon"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#spark"></use></svg></div>
+          <h3 class="h-card">AI weekly storylines</h3>
+          <p>Deterministic league facts with optional Gemini narrative: upsets, blowouts, Top&nbsp;5, playoff projections — one recap that updates instead of duplicating.</p>
+          <a class="f-link" href="commands.html#aiweek">See /aiweek →</a>
+        </article>
+        <article class="glass card-hover feature reveal" style="--d:.07s">
+          <div class="f-icon"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#trophy"></use></svg></div>
+          <h3 class="h-card">Careers that outlive seasons</h3>
+          <p>XP, levels, win ratios, championships, and archived seasons survive rollover, team release, restarts, and Discord channel cleanup.</p>
+          <a class="f-link" href="commands.html#leaderboard">Career commands →</a>
+        </article>
+        <article class="glass card-hover feature reveal" style="--d:.14s">
+          <div class="f-icon"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#broadcast"></use></svg></div>
+          <h3 class="h-card">Live league presence</h3>
+          <p>Twitch &amp; YouTube go-live alerts, Game of the Week polls with team-emoji voting, plus trade-block and transaction feeds.</p>
+          <a class="f-link" href="commands.html#gameoftheweek">Content tools →</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ TIMELINE ═══ -->
+  <section class="section-tight">
+    <div class="wrap">
+      <div class="center reveal">
+        <span class="kicker">The rhythm</span>
+        <h2 class="h-section">How a week runs</h2>
+        <p class="lead">Owners handle everything with reactions inside their own matchup room. Commissioners only step in to rule.</p>
+      </div>
+      <div class="timeline">
+        <div class="glass t-step reveal" style="--d:.0s"><div class="t-emoji"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#calendar"></use></svg></div><h4>Schedule</h4><p>An owner reacts and types a kickoff time. 10-minute guided prompt.</p></div>
+        <div class="glass t-step reveal" style="--d:.06s"><div class="t-emoji"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#check"></use></svg></div><h4>Lock it in</h4><p>The opponent confirms — or counters with a new time.</p></div>
+        <div class="glass t-step reveal" style="--d:.12s"><div class="t-emoji"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#gamepad"></use></svg></div><h4>Play the game</h4><p>Adaptive reminders escalate as the weekly deadline approaches.</p></div>
+        <div class="glass t-step reveal" style="--d:.18s"><div class="t-emoji"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#flag"></use></svg></div><h4>Submit</h4><p>Final score in away-home order plus one screenshot of proof.</p></div>
+        <div class="glass t-step reveal" style="--d:.24s"><div class="t-emoji"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#shield"></use></svg></div><h4>Verify</h4><p>Opponent confirms or disputes. Commissioner reviews the evidence.</p></div>
+        <div class="glass t-step reveal" style="--d:.3s"><div class="t-emoji"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#chart"></use></svg></div><h4>Go official</h4><p>One final-scores post, XP awarded, and the next week opens.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ SPLIT 1: Matchup rooms ═══ -->
+  <section class="section">
+    <div class="wrap">
+      <div class="split">
+        <div class="split-copy reveal">
+          <span class="kicker">Matchup rooms</span>
+          <h3>A private war room for every game</h3>
+          <p>Each fixture gets its own channel where only the two owners (and commissioners) can act. Everything runs on reactions — no commands to memorize mid-season.</p>
+          <ul>
+            <li>Schedule, counter, confirm, and submit — straight from the matchup card</li>
+            <li>Force-win, fair-sim, and help requests open private commissioner cases</li>
+            <li><b>Report Dispute</b> files a written statement with a numbered case ID</li>
+            <li>Every action is mirrored to the commissioner audit channel</li>
+          </ul>
+        </div>
+        <div class="split-visual reveal" style="--d:.1s">
+          <div class="glass glass-strong discord-mock">
+            <div class="dm-head"><span class="hash">#</span> wk4-bears-at-lions <span style="margin-left:auto">WEEK 4 MATCHUPS</span></div>
+            <div class="dm-bot">
+              <div class="dm-av"><img src="assets/img/logo-128.png" alt="" /></div>
+              <div style="flex:1;min-width:0">
+                <div class="dm-name">Legacy <span class="dm-tag">✓ BOT</span></div>
+                <div class="dm-embed">
+                  <h5><svg class="site-icon dm-title-icon" aria-hidden="true"><use href="assets/img/icons.svg#football"></use></svg>Week 4 · Chicago Bears @ Detroit Lions</h5>
+                  <div class="dm-row"><span>Away</span><b>🐻 Bears — @KingCam</b></div>
+                  <div class="dm-row"><span>Home</span><b>🦁 Lions — @SundayGrit</b></div>
+                  <div class="dm-row"><span>Status</span><b style="color:#5cc9ff">Scheduled · Sat 9:00 PM ET</b></div>
+                  <div class="dm-row"><span>Deadline</span><b>4 days remaining</b></div>
+                </div>
+                <div class="dm-reacts">
+                  <span class="dm-react">📅 <b>Schedule</b></span>
+                  <span class="dm-react">🔁 <b>Counter</b></span>
+                  <span class="dm-react">✅ <b>Confirm</b></span>
+                  <span class="dm-react">🏁 <b>Finish</b></span>
+                  <span class="dm-react">🆘 <b>Help</b></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="glass float-chip" style="top:-22px;right:6%;animation-delay:-2s"><span class="ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#bell"></use></svg></span> Reminder sent · 2h before deadline</div>
+          <div class="glass float-chip" style="bottom:-20px;left:4%;animation-delay:-4s"><span class="ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#folder"></use></svg></span> Case #12 → #commissioner-audit</div>
+        </div>
+      </div>
+
+      <!-- ═══ SPLIT 2: Commissioner center ═══ -->
+      <div class="split rev">
+        <div class="split-copy reveal">
+          <span class="kicker">Commissioner command center</span>
+          <h3>Every ruling, one dashboard</h3>
+          <p>Open <code class="inline-cmd">/week</code> and rule the league from a single interactive panel. Decisions are atomic — two commissioners can never finalize the same game twice.</p>
+          <ul>
+            <li>Approve submitted scores or send them back for more evidence</li>
+            <li>Force wins and fair simulations, recorded separately from scored games</li>
+            <li>Reopen a final with full XP and standings reversal — after a second confirmation</li>
+            <li>Advance the week: next week opens <b>before</b> the old one is removed</li>
+          </ul>
+        </div>
+        <div class="split-visual reveal" style="--d:.1s">
+          <div class="glass glass-strong discord-mock">
+            <div class="dm-head"><span class="hash">/</span> week · commissioner dashboard</div>
+            <div class="dm-bot">
+              <div class="dm-av"><img src="assets/img/logo-128.png" alt="" /></div>
+              <div style="flex:1;min-width:0">
+                <div class="dm-name">Legacy <span class="dm-tag">✓ BOT</span></div>
+                <div class="dm-embed" style="border-left-color:#3f9dff">
+                  <h5><svg class="site-icon dm-title-icon" aria-hidden="true"><use href="assets/img/icons.svg#shield"></use></svg>Week 4 — 14 of 16 finals in</h5>
+                  <div class="dm-row"><span>#37 Bears @ Lions</span><b class="dm-score">24 – 17 ✓</b></div>
+                  <div class="dm-row"><span>#41 Chiefs @ Bills</span><b style="color:#e8bb5a">Evidence review</b></div>
+                  <div class="dm-row"><span>#44 Eagles @ Cowboys</span><b style="color:#ff9d9d">Dispute · Case #12</b></div>
+                </div>
+                <div class="dm-reacts">
+                  <span class="dm-react">✅ <b>Approve</b></span>
+                  <span class="dm-react">🔎 <b>More evidence</b></span>
+                  <span class="dm-react">🏠 <b>Force win</b></span>
+                  <span class="dm-react">🤝 <b>Fair sim</b></span>
+                  <span class="dm-react">📈 <b>Advance week</b></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="glass float-chip" style="top:-20px;left:8%;animation-delay:-1s"><span class="ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#bolt"></use></svg></span> Atomic — no double rulings</div>
+        </div>
+      </div>
+
+      <!-- ═══ SPLIT 3: AI recaps ═══ -->
+      <div class="split">
+        <div class="split-copy reveal">
+          <span class="kicker">Weekly storylines</span>
+          <h3>Broadcast-grade recaps, on schedule</h3>
+          <p>Legacy computes the facts deterministically — upset of the week, best game, biggest blowout, Top&nbsp;5, projected playoff seeds — and Gemini writes the narrative on top, in the voice you choose.</p>
+          <ul>
+            <li>One recap per week that <b>updates</b> when late results land — never duplicates</li>
+            <li>AI receives only sanitized public score facts; it can't invent stats</li>
+            <li>Daily usage caps, retry-safe, and league ops never block on AI</li>
+            <li>Game of the Week polls with team-emoji prediction voting</li>
+          </ul>
+        </div>
+        <div class="split-visual reveal" style="--d:.1s">
+          <div class="glass glass-strong discord-mock">
+            <div class="dm-head"><span class="hash">#</span> weekly-recaps</div>
+            <div class="dm-bot">
+              <div class="dm-av"><img src="assets/img/logo-128.png" alt="" /></div>
+              <div style="flex:1;min-width:0">
+                <div class="dm-name">Legacy <span class="dm-tag">✓ BOT</span></div>
+                <div class="dm-embed">
+                  <h5><svg class="site-icon dm-title-icon" aria-hidden="true"><use href="assets/img/icons.svg#newspaper"></use></svg>Week 4 — The Recap</h5>
+                  <div class="dm-row"><span>😱 Upset of the Week</span><b>Panthers stun the Ravens</b></div>
+                  <div class="dm-row"><span class="dm-label"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#bolt"></use></svg>Best Game</span><b class="dm-score">27 – 24 · Chiefs @ Bills</b></div>
+                  <div class="dm-row"><span>💥 Biggest Blowout</span><b class="dm-score">41 – 10 · 49ers</b></div>
+                  <div class="dm-row"><span>⭐ MVP</span><b>J. Love — 325 yds, 4 TD</b></div>
+                  <div class="dm-row"><span class="dm-label"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#trophy"></use></svg>Top 5</span><b>SF · KC · DET · BUF · PHI</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="glass float-chip" style="bottom:-20px;right:8%;animation-delay:-3s"><span class="ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#spark"></use></svg></span> Gemini narrative · optional</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ CTA ═══ -->
+  <section class="section-tight">
+    <div class="wrap">
+      <div class="glass cta-band reveal">
+        <div class="banner-bg"></div>
+        <span class="kicker">Ready for kickoff</span>
+        <h2>Bring <span class="grad-text">Legacy</span> to your server.</h2>
+        <p>Set up in minutes: run <code class="inline-cmd">/setup</code>, map your channels, import the season, and hand your owners the keys.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-gold" href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+          <a class="btn btn-ghost" href="docs.html">Read the setup guide</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <img src="assets/img/logo-128.png" alt="Legacy logo" />
+          <p>Legacy — Madden league operations for Discord. Multi-server, season-isolated, and built to keep permanent history.</p>
+        </div>
+        <div class="foot-col">
+          <h5>Product</h5>
+          <a href="commands.html">Command reference</a>
+          <a href="docs.html">Documentation</a>
+          <a href="faq.html">FAQ &amp; support</a>
+        </div>
+        <div class="foot-col">
+          <h5>Guides</h5>
+          <a href="docs.html#launch">Launch a season</a>
+          <a href="docs.html#matchups">Matchup rooms</a>
+          <a href="docs.html#seasons">Awards &amp; season close</a>
+        </div>
+        <div class="foot-col">
+          <h5>League</h5>
+          <a href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+          <a href="docs.html#hosting">Hosting &amp; backups</a>
+        </div>
+      </div>
+      <div class="foot-base">
+        <span>© <span data-year></span> Legacy · Madden League Operations</span>
+        <span>Not affiliated with EA Sports or the NFL.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
