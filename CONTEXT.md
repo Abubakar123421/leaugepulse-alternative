@@ -51,12 +51,13 @@ Channel names are configurable; do not hardcode their IDs.
 - Roster, fixture, and member imports are previewed and atomic.
 - Weekly rollover is restart-safe and guarded against concurrent runs.
 - Failed Discord cleanup remains retryable.
+- /season-force-delete may discard only the active test season after exact-text and button confirmation; other guilds, configured destinations, team-role definitions, and older archives remain untouched.
 - Persistent views use stable custom IDs and are restored on startup.
 - Gemini receives only sanitized public league facts, never secrets, evidence, audit content, or private dispute text.
 
 ## Current implementation
 
-Implemented modules include configurable destinations, full-season roster/fixture imports, Open Teams roster cards, self-claim and CSV ownership, team roles, matchup categories/channels, adaptive reminders, result evidence/review, commissioner cases, final-score history, profiles/XP, season close/cleanup, runtime emojis, Game of the Week voting, weekly recaps/rankings, awards, Gemini jobs, and optional stream alerts.
+Implemented modules include configurable destinations, full-season roster/fixture imports, Open Teams roster cards, self-claim and CSV ownership, team roles, matchup categories/channels, adaptive reminders, result evidence/review, commissioner cases, final-score history, profiles/XP, season close/cleanup, confirmation-protected test-season force deletion, runtime emojis, Game of the Week voting, weekly recaps/rankings, awards, Gemini jobs, and optional stream alerts.
 
 The automated suite currently contains 54 passing tests before release cleanup. Always rerun the suite after changes rather than relying on this number.
 

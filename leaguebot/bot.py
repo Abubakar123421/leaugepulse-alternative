@@ -39,11 +39,13 @@ from .result_ui import (
     OpponentResultDecisionButton,
     restore_pending_result_reviews,
 )
-from .season_lifecycle import season_close_preview
+from .season_lifecycle import season_close_preview, season_force_delete_preview
 from .season_ui import (
     SeasonCleanupRetryView,
     SeasonCloseConfirmationView,
+    SeasonForceDeleteConfirmationView,
     season_close_embed,
+    season_force_delete_embed,
 )
 from .schedule_ui import ScheduleDecisionButton
 from .services import ReminderService, StreamService, WeekRolloverService, make_backup
@@ -2113,6 +2115,70 @@ def register_commands(bot: LeagueBot) -> None:
             )
         else:
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @tree.command(
+        name="season-force-delete",
+        description="Permanently discard the active test season and start an empty one.",
+    )
+    @app_commands.describe(
+        new_season="Name for the empty replacement season",
+        confirmation="Type DELETE followed by the current season name",
+    )
+    async def season_force_delete(
+        interaction: discord.Interaction,
+        new_season: str,
+        confirmation: str,
+    ) -> None:
+        if await deny_dm(interaction):
+            return
+        settings = await db.settings(interaction.guild_id)
+        if not await require_commissioner(interaction, settings):
+            return
+
+        expected = f"DELETE {settings['season']}"
+        if confirmation.strip() != expected:
+            await interaction.response.send_message(
+                f"Confirmation did not match. Type exactly: `{expected}`",
+                ephemeral=True,
+            )
+            return
+        clean_new = " ".join(new_season.split())
+        if not clean_new or clean_new.casefold() == settings["season"].casefold():
+            await interaction.response.send_message(
+                "Enter a different, non-empty replacement season name.", ephemeral=True
+            )
+            return
+        existing_new = await db.fetchone(
+            """SELECT 1 FROM season_archives WHERE guild_id=? AND season=?
+               UNION SELECT 1 FROM matchups WHERE guild_id=? AND season=?
+               UNION SELECT 1 FROM franchises WHERE guild_id=? AND season=? LIMIT 1""",
+            (
+                interaction.guild_id, clean_new,
+                interaction.guild_id, clean_new,
+                interaction.guild_id, clean_new,
+            ),
+        )
+        if existing_new:
+            await interaction.response.send_message(
+                "That replacement season name already exists in this server's data or history.",
+                ephemeral=True,
+            )
+            return
+
+        preview = await season_force_delete_preview(
+            db, interaction.guild_id, settings["season"]
+        )
+        await interaction.response.send_message(
+            embed=season_force_delete_embed(preview, new_season=clean_new),
+            view=SeasonForceDeleteConfirmationView(
+                db,
+                guild_id=interaction.guild_id,
+                season=settings["season"],
+                new_season=clean_new,
+                actor_id=interaction.user.id,
+            ),
+            ephemeral=True,
+        )
 
     @tree.command(name="season-cleanup", description="Retry cleanup for an archived Madden season.")
     async def season_cleanup(

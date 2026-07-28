@@ -1,7 +1,12 @@
 import pytest
 
 from leaguebot.db import Database
-from leaguebot.season_lifecycle import archive_season, season_close_preview
+from leaguebot.season_lifecycle import (
+    archive_season,
+    force_delete_active_season,
+    season_close_preview,
+    season_force_delete_preview,
+)
 from leaguebot.awards import AWARD_CATEGORIES, set_season_award
 
 
@@ -106,3 +111,134 @@ async def test_unresolved_season_cannot_be_archived(tmp_path):
         )
     assert await db.fetchone("SELECT * FROM matchups WHERE guild_id=1")
     assert (await db.settings(1))["season"] == "1"
+
+@pytest.mark.asyncio
+async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(tmp_path):
+    db = Database(tmp_path / "force-delete.sqlite3")
+    await db.initialize()
+    await db.update_settings(
+        1,
+        league_name="Demo League",
+        game="Madden 26",
+        season="Demo",
+        final_scores_channel_id=111,
+        audit_channel_id=222,
+        commissioner_role_id=333,
+        open_teams_message_id=444,
+        category_id=555,
+        matchup_category_id=555,
+    )
+    await db.update_settings(2, season="Demo")
+
+    # Permanent stats already include one active Demo result plus older history.
+    await db.execute(
+        """INSERT INTO career_profiles
+           (guild_id,user_id,games,wins,losses,points_for,points_against,xp,
+            created_at,updated_at)
+           VALUES (1,10,3,2,1,70,50,300,'now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO season_participants
+           (guild_id,season,user_id,team_name,games,wins,points_for,
+            points_against,xp,joined_at,updated_at)
+           VALUES (1,'Demo',10,'Bears',1,1,24,10,100,'now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO career_events
+           (guild_id,season,source_key,user_id,event_type,xp,created_at)
+           VALUES (1,'Demo','1:demo-game',10,'complete',100,'now')"""
+    )
+    await db.execute(
+        """INSERT INTO franchises
+           (guild_id,season,external_team_id,team_name,abbreviation,imported_at)
+           VALUES (1,'Demo','CHI','Bears','CHI','now'),
+                  (2,'Demo','GB','Packers','GB','now')"""
+    )
+    await db.execute(
+        """INSERT INTO roster_players
+           (guild_id,season,external_player_id,external_team_id,team_name,
+            full_name,position,imported_at)
+           VALUES (1,'Demo','p1','CHI','Bears','Test Player','QB','now')"""
+    )
+    await db.execute(
+        """INSERT INTO profiles
+           (guild_id,user_id,team_name,approved,updated_at)
+           VALUES (1,10,'Bears',1,'now'),(2,20,'Packers',1,'now')"""
+    )
+    await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,
+            away_user_id,status,created_at,updated_at)
+           VALUES (1,'Demo',1,'demo-game','Bears','Packers',10,'waiting','now','now'),
+                  (2,'Demo',1,'other-game','Packers','Bears',20,'waiting','now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO open_rosters
+           (guild_id,season,team_name,updated_at) VALUES (1,'Demo','Bears','now')"""
+    )
+    await db.execute(
+        """INSERT INTO season_archives
+           (guild_id,season,league_name,game,total_games,cleanup_status,
+            archived_by,archived_at)
+           VALUES (1,'Archived','Demo League','Madden 26',1,'complete',99,'now')"""
+    )
+    await db.audit(1, 10, "demo_action")
+    await db.audit(2, 20, "other_guild_action")
+
+    preview = await season_force_delete_preview(db, 1, "Demo")
+    assert (preview.matchups, preview.franchises, preview.roster_players, preview.owners) == (
+        1, 1, 1, 1
+    )
+
+    result = await force_delete_active_season(
+        db,
+        guild_id=1,
+        season="Demo",
+        new_season="Launch",
+        actor_id=99,
+    )
+    assert (result.matchups_deleted, result.roster_players_deleted) == (1, 1)
+
+    settings = await db.settings(1)
+    assert settings["season"] == "Launch"
+    assert settings["current_week"] == 1
+    assert settings["final_scores_channel_id"] == 111
+    assert settings["audit_channel_id"] == 222
+    assert settings["commissioner_role_id"] == 333
+    assert settings["open_teams_message_id"] is None
+    assert settings["category_id"] is None
+
+    for table in (
+        "matchups", "franchises", "roster_players", "profiles",
+        "open_rosters", "season_participants", "career_events",
+    ):
+        assert await db.fetchone(
+            f"SELECT 1 FROM {table} WHERE guild_id=1 AND "
+            + ("1=1" if table == "profiles" else "season='Demo'")
+        ) is None
+
+    career = await db.fetchone(
+        "SELECT * FROM career_profiles WHERE guild_id=1 AND user_id=10"
+    )
+    assert (career["games"], career["wins"], career["losses"], career["xp"]) == (
+        2, 1, 1, 200
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM season_archives WHERE guild_id=1 AND season='Archived'"
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM matchups WHERE guild_id=2 AND season='Demo'"
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM franchises WHERE guild_id=2 AND season='Demo'"
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM profiles WHERE guild_id=2 AND user_id=20"
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM audit_logs WHERE guild_id=2 AND action='other_guild_action'"
+    )
+    audit = await db.fetchone(
+        "SELECT * FROM audit_logs WHERE guild_id=1"
+    )
+    assert audit["action"] == "season_force_deleted"

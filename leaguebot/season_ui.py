@@ -7,7 +7,10 @@ from .db import Database
 from .team_roles import clear_team_role_members
 from .season_lifecycle import (
     SeasonClosePreview,
+    SeasonForceDeletePreview,
     archive_season,
+    force_delete_active_season,
+    purge_active_season_discord_content,
     resume_season_cleanup,
     rotate_discord_season_space,
     season_close_preview,
@@ -62,6 +65,127 @@ def season_close_embed(
     )
     return embed
 
+
+def season_force_delete_embed(
+    preview: SeasonForceDeletePreview,
+    *,
+    new_season: str,
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"Force Delete Test Season {preview.season}",
+        description=(
+            "This permanently discards the active season without requiring completed "
+            f"games or awards, then changes the active season to **{new_season}**."
+        ),
+        color=discord.Color.red(),
+    )
+    embed.add_field(
+        name="Will Be Permanently Removed",
+        value=(
+            f"• {preview.matchups} matchup(s) and every pending result/dispute\n"
+            f"• {preview.franchises} franchise(s) and {preview.roster_players} roster player(s)\n"
+            f"• {preview.owners} active owner assignment(s)\n"
+            f"• {preview.tracked_posts} tracked season post(s), weekly channels, reminders, "
+            "awards, recaps, XP earned in this season, and test history"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Will Be Preserved",
+        value=(
+            "• Commissioner role and all configured permanent destination channels\n"
+            "• Team-role definitions (members are removed)\n"
+            "• Previously archived seasons and career totals earned outside this season\n"
+            "• Bot settings and integration configuration"
+        ),
+        inline=False,
+    )
+    embed.set_footer(
+        text="Use this only for demos/tests. This action cannot be undone without a database backup."
+    )
+    return embed
+
+
+class SeasonForceDeleteConfirmationView(discord.ui.View):
+    def __init__(
+        self,
+        db: Database,
+        *,
+        guild_id: int,
+        season: str,
+        new_season: str,
+        actor_id: int,
+    ):
+        super().__init__(timeout=180)
+        self.db = db
+        self.guild_id = guild_id
+        self.season = season
+        self.new_season = new_season
+        self.actor_id = actor_id
+
+    @discord.ui.button(
+        label="Permanently Delete Test Season",
+        style=discord.ButtonStyle.danger,
+    )
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self.actor_id:
+            await interaction.response.send_message(
+                "This confirmation belongs to another Commissioner.", ephemeral=True
+            )
+            return
+        settings = await self.db.settings(self.guild_id)
+        if not await is_commissioner(interaction, settings):
+            await interaction.response.send_message(
+                "Only a Commissioner can force-delete an active season.", ephemeral=True
+            )
+            return
+        if settings["season"] != self.season:
+            await interaction.response.send_message(
+                "The active season changed. Run `/season-force-delete` again.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        guild = interaction.client.get_guild(self.guild_id)
+        discord_errors: list[str] = []
+        role_errors: list[str] = []
+        if guild:
+            discord_errors = await purge_active_season_discord_content(
+                guild, self.db, season=self.season
+            )
+            role_errors = await clear_team_role_members(guild, self.db)
+        else:
+            discord_errors.append("The server is no longer available to the bot.")
+
+        try:
+            result = await force_delete_active_season(
+                self.db,
+                guild_id=self.guild_id,
+                season=self.season,
+                new_season=self.new_season,
+                actor_id=interaction.user.id,
+            )
+        except ValueError as exc:
+            await interaction.edit_original_response(content=str(exc), view=None)
+            return
+
+        cleanup_errors = discord_errors + role_errors
+        summary = (
+            f"🧹 **Season {result.season} permanently deleted**\n"
+            f"Matchups deleted: **{result.matchups_deleted}**\n"
+            f"Franchises deleted: **{result.franchises_deleted}**\n"
+            f"Roster players deleted: **{result.roster_players_deleted}**\n"
+            f"Owner assignments deleted: **{result.owners_deleted}**\n"
+            f"New empty season: **{result.new_season}**\n"
+            f"Discord cleanup: **{'Complete' if not cleanup_errors else 'Partial'}**"
+        )
+        if cleanup_errors:
+            summary += "\nManual cleanup may be needed: " + "; ".join(cleanup_errors)[:800]
+        await interaction.edit_original_response(content=summary, view=None)
+        await _send_completion_summary(interaction, summary)
+        button.disabled = True
 
 class SeasonCloseConfirmationView(discord.ui.View):
     def __init__(

@@ -1,7 +1,13 @@
 import pytest
 
 from leaguebot.db import Database
-from leaguebot.channel_workflow import CONFIRM, COUNTER, DISPUTE, _valid_action_message
+from leaguebot.channel_workflow import (
+    CONFIRM,
+    COUNTER,
+    DISPUTE,
+    REACTIONS,
+    _valid_action_message,
+)
 from leaguebot.registration import registration_state
 from leaguebot.team_roles import MADDEN_TEAMS
 
@@ -51,6 +57,9 @@ async def test_weekly_channel_schema_survives_restart(tmp_path):
     assert matchup["channel_id"] == 999
     assert category["category_id"] == 888
 
+
+def test_result_dispute_reaction_is_accepted():
+    assert DISPUTE in REACTIONS
 
 def test_proposal_and_result_messages_accept_direct_reactions():
     assert _valid_action_message("schedule_pending", CONFIRM, "@owner proposed Friday at 8 PM")

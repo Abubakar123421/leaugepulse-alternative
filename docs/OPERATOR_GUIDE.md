@@ -71,6 +71,16 @@ Owners submit an away-home score with one PNG/JPG/WebP evidence image. The oppon
 4. If cleanup partially fails, fix Discord permissions and run `/season-cleanup`.
 
 The bot preserves compact results, careers, XP, ownership history, and awards while clearing active operational data and team-role members.
+### Force-delete a demo or test season
+
+Use this only when the active season is disposable and must be reset even though games or awards are unfinished.
+
+1. Run `/backup` and download the database file.
+2. Run `/season-force-delete new_season:<new name> confirmation:DELETE <current season>`.
+3. Review the private deletion preview and press **Permanently Delete Test Season**.
+4. Reimport rosters, repost the Open Teams directory, assign owners, and reimport fixtures.
+
+This removes the active season's rosters, fixtures, owners, result evidence, tracked posts, weekly channels, recaps, awards, reminders, and XP earned in that season. It preserves configured permanent destination channels, the Commissioner role, empty team-role definitions, other Discord servers, and previously archived history. The old season name must match exactly in the confirmation text.
 
 ## Troubleshooting
 

@@ -41,3 +41,7 @@ Use the `/week` commissioner dashboard to advance. Show that the bot creates `WE
 ## 9. Reliability and transfer
 
 Explain restart-safe reminders, idempotent output posts, automatic migrations, backups, multi-server isolation, and configurable destinations. The hosted release starts with no database and creates it automatically.
+
+## 10. Reset after the demo
+
+Run `/backup`, then use `/season-force-delete new_season:Launch confirmation:DELETE Demo` (replace `Demo` with the exact active season name). Review the destructive preview and press **Permanently Delete Test Season**. The bot removes the demo season and its weekly Discord space while retaining the server's permanent channel mappings and older archived history.

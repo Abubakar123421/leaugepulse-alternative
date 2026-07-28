@@ -36,6 +36,7 @@ Weekly matchup categories are automatic and are not mapped to a permanent catego
 - Runtime custom-team-emoji resolution by emoji name via `/syncteamemojis` and `/setteamemoji`; Discord emoji IDs are never hardcoded.
 - Commissioner dashboards, force wins, fair simulations, result evidence/review, team release, and restart-safe reminders.
 - Career profiles, XP, leaderboard, season history, archival, and retryable season cleanup.
+- Confirmation-protected `/season-force-delete` for discarding an active demo/test season without affecting other servers or prior archives.
 - Game of the Week graphics with team-emoji voting.
 - Deterministic rankings/weekly recap facts, season awards, and optional Gemini narrative generation.
 - Optional Twitch and YouTube live alerts.
