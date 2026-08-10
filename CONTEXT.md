@@ -53,6 +53,7 @@ Channel names are configurable; do not hardcode their IDs.
 - Weekly rollover is restart-safe and guarded against concurrent runs.
 - Failed Discord cleanup remains retryable.
 - /season-force-delete may discard only the active test season after exact-text and button confirmation; other guilds, configured destinations, team-role definitions, and older archives remain untouched.
+- `/season-test-reset` is the safe active-season testing reset: it removes generated week channels and resets unfinished scheduling/result/dispute state while preserving completed results, career history, imported data, and ownership.
 - Persistent views use stable custom IDs and are restored on startup.
 - Gemini receives only sanitized public league facts, never secrets, evidence, audit content, or private dispute text.
 

@@ -8,13 +8,133 @@ from .team_roles import clear_team_role_members
 from .season_lifecycle import (
     SeasonClosePreview,
     SeasonForceDeletePreview,
+    SeasonTestResetPreview,
     archive_season,
     force_delete_active_season,
     purge_active_season_discord_content,
+    reset_active_season_test_data,
     resume_season_cleanup,
     rotate_discord_season_space,
     season_close_preview,
 )
+
+
+def season_test_reset_embed(preview: SeasonTestResetPreview) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"Reset Season {preview.season} Test Data",
+        description=(
+            "This removes generated weekly matchup channels and resets unfinished "
+            "matchup workflow so testing can restart from Week 1."
+        ),
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name="Will Be Reset",
+        value=(
+            f"• {preview.unfinished_matchups} unfinished matchup(s)\n"
+            f"• {preview.generated_week_categories} generated week category record(s)\n"
+            "• Scheduling proposals, reminders, pending scores, evidence, and disputes"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Will Be Preserved",
+        value=(
+            f"• {preview.completed_matchups} completed matchup(s) and official scores\n"
+            "• Career records, XP, season participants, imported fixtures and rosters\n"
+            "• Team ownership, configured destinations, and Open Teams cards"
+        ),
+        inline=False,
+    )
+    embed.set_footer(
+        text="Use /season-force-delete only when the entire active test season should be erased."
+    )
+    return embed
+
+
+class SeasonTestResetConfirmationView(discord.ui.View):
+    def __init__(self, db: Database, *, guild_id: int, season: str, actor_id: int):
+        super().__init__(timeout=180)
+        self.db = db
+        self.guild_id = guild_id
+        self.season = season
+        self.actor_id = actor_id
+
+    @discord.ui.button(label="Reset Unfinished Test Data", style=discord.ButtonStyle.danger)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        if interaction.user.id != self.actor_id:
+            await interaction.response.send_message(
+                "This confirmation belongs to another Commissioner.", ephemeral=True
+            )
+            return
+        settings = await self.db.settings(self.guild_id)
+        if not await is_commissioner(interaction, settings):
+            await interaction.response.send_message(
+                "Only a Commissioner can reset season test data.", ephemeral=True
+            )
+            return
+        if settings["season"] != self.season:
+            await interaction.response.send_message(
+                "The active season changed. Run `/season-test-reset` again.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        errors: list[str] = []
+        guild = interaction.guild
+        category_rows = await self.db.fetchall(
+            """SELECT category_id FROM week_categories
+               WHERE guild_id=? AND season=? ORDER BY week""",
+            (self.guild_id, self.season),
+        )
+        if guild:
+            for row in category_rows:
+                category = guild.get_channel(row["category_id"] or 0)
+                if not isinstance(category, discord.CategoryChannel):
+                    continue
+                for channel in list(category.channels):
+                    try:
+                        await channel.delete(reason=f"Resetting Season {self.season} test data")
+                    except discord.NotFound:
+                        pass
+                    except (discord.Forbidden, discord.HTTPException) as exc:
+                        errors.append(f"{channel.name}: {exc}")
+                try:
+                    await category.delete(reason=f"Resetting Season {self.season} test data")
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    errors.append(f"{category.name}: {exc}")
+        else:
+            errors.append("The server is no longer available to the bot.")
+        try:
+            result = await reset_active_season_test_data(
+                self.db,
+                guild_id=self.guild_id,
+                season=self.season,
+                actor_id=interaction.user.id,
+            )
+        except ValueError as exc:
+            await interaction.edit_original_response(content=str(exc), view=None)
+            return
+        from .open_teams_ui import refresh_open_teams_panel
+        try:
+            await refresh_open_teams_panel(
+                interaction.client, self.db, self.guild_id
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            errors.append(f"Open Teams refresh: {exc}")
+        summary = (
+            f"Season **{result.season}** test workflow reset to Week 1.\n"
+            f"Unfinished matchups reset: **{result.matchups_reset}**\n"
+            f"Completed matchups preserved: **{result.completed_matchups_preserved}**\n"
+            "Imported fixtures, rosters, ownership, career records, and official history were preserved."
+        )
+        if errors:
+            summary += "\n\nDiscord cleanup warnings:\n" + "\n".join(errors[:8])
+        button.disabled = True
+        await interaction.edit_original_response(content=summary[:1900], view=self)
 
 
 def season_close_embed(

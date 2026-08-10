@@ -66,6 +66,22 @@ class SeasonForceDeleteResult:
     owners_deleted: int
 
 
+@dataclass(frozen=True, slots=True)
+class SeasonTestResetPreview:
+    guild_id: int
+    season: str
+    unfinished_matchups: int
+    completed_matchups: int
+    generated_week_categories: int
+
+
+@dataclass(frozen=True, slots=True)
+class SeasonTestResetResult:
+    season: str
+    matchups_reset: int
+    completed_matchups_preserved: int
+
+
 async def season_close_preview(
     db: Database, guild_id: int, season: str
 ) -> SeasonClosePreview:
@@ -158,6 +174,116 @@ async def season_force_delete_preview(
             (guild_id,),
         ),
         tracked_posts=tracked_posts,
+    )
+
+
+async def season_test_reset_preview(
+    db: Database, guild_id: int, season: str
+) -> SeasonTestResetPreview:
+    rows = await db.fetchall(
+        "SELECT status FROM matchups WHERE guild_id=? AND season=?",
+        (guild_id, season),
+    )
+    categories = await db.fetchone(
+        """SELECT COUNT(*) AS total FROM week_categories
+           WHERE guild_id=? AND season=?""",
+        (guild_id, season),
+    )
+    return SeasonTestResetPreview(
+        guild_id=guild_id,
+        season=season,
+        unfinished_matchups=sum(row["status"] not in FINAL_STATUSES for row in rows),
+        completed_matchups=sum(row["status"] in FINAL_STATUSES for row in rows),
+        generated_week_categories=int(categories["total"] if categories else 0),
+    )
+
+
+async def reset_active_season_test_data(
+    db: Database, *, guild_id: int, season: str, actor_id: int
+) -> SeasonTestResetResult:
+    """Reset unfinished matchup workflow while preserving fixtures and official history."""
+    preview = await season_test_reset_preview(db, guild_id, season)
+    now = iso_now()
+    async with db.connect() as conn:
+        await conn.execute("BEGIN IMMEDIATE")
+        cursor = await conn.execute(
+            "SELECT season FROM guild_settings WHERE guild_id=?", (guild_id,)
+        )
+        settings = await cursor.fetchone()
+        if not settings or settings["season"] != season:
+            await conn.rollback()
+            raise ValueError(
+                "The active season changed before confirmation. Run the command again."
+            )
+        unfinished_filter = """matchup_id IN (
+            SELECT id FROM matchups WHERE guild_id=? AND season=? AND status NOT IN
+            ('complete','force_home','force_away','fair_sim'))"""
+        await conn.execute(
+            f"DELETE FROM matchup_prompts WHERE {unfinished_filter}",
+            (guild_id, season),
+        )
+        await conn.execute(
+            f"DELETE FROM reminder_deliveries WHERE {unfinished_filter}",
+            (guild_id, season),
+        )
+        await conn.execute(
+            """DELETE FROM matchup_cases WHERE guild_id=? AND season=?
+               AND matchup_id IN (
+                   SELECT id FROM matchups WHERE guild_id=? AND season=?
+                   AND status NOT IN ('complete','force_home','force_away','fair_sim'))""",
+            (guild_id, season, guild_id, season),
+        )
+        await conn.execute(
+            """UPDATE matchups SET status='waiting',away_score=NULL,home_score=NULL,
+               proposed_by=NULL,proposed_at=NULL,scheduled_at=NULL,
+               schedule_previous_at=NULL,schedule_proposal_version=0,deadline_at=NULL,
+               issue_text=NULL,thread_id=NULL,channel_id=NULL,message_id=NULL,
+               commissioner_pinged_at=NULL,result_submission_version=0,
+               result_submitted_by=NULL,result_submitted_at=NULL,
+               result_evidence_url=NULL,result_opponent_status=NULL,
+               result_opponent_by=NULL,result_audit_message_id=NULL,
+               result_reviewed_by=NULL,result_reviewed_at=NULL,result_review_note=NULL,
+               updated_at=? WHERE guild_id=? AND season=? AND status NOT IN
+               ('complete','force_home','force_away','fair_sim')""",
+            (now, guild_id, season),
+        )
+        # Completed rows retain scores, owners, decisions, final-score posts, and history.
+        # Their temporary weekly-channel references are cleared because those channels are removed.
+        await conn.execute(
+            """UPDATE matchups SET thread_id=NULL,channel_id=NULL,message_id=NULL,updated_at=?
+               WHERE guild_id=? AND season=? AND status IN
+               ('complete','force_home','force_away','fair_sim')""",
+            (now, guild_id, season),
+        )
+        await conn.execute(
+            "DELETE FROM week_categories WHERE guild_id=? AND season=?",
+            (guild_id, season),
+        )
+        await conn.execute(
+            """UPDATE guild_settings SET current_week=1,category_id=NULL,
+               matchup_category_id=NULL,week_started_at=NULL,week_deadline_at=NULL,
+               updated_at=? WHERE guild_id=?""",
+            (now, guild_id),
+        )
+        await conn.execute(
+            """INSERT INTO audit_logs
+               (guild_id,actor_id,action,target_type,target_id,details,created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                guild_id, actor_id, "season_test_data_reset", "season", season,
+                json.dumps({
+                    "matchups_reset": preview.unfinished_matchups,
+                    "completed_matchups_preserved": preview.completed_matchups,
+                    "week_categories_removed": preview.generated_week_categories,
+                }),
+                now,
+            ),
+        )
+        await conn.commit()
+    return SeasonTestResetResult(
+        season=season,
+        matchups_reset=preview.unfinished_matchups,
+        completed_matchups_preserved=preview.completed_matchups,
     )
 
 

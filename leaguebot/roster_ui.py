@@ -112,6 +112,14 @@ class TeamReleaseConfirmationView(discord.ui.View):
                 ),
             )
             await conn.commit()
+        await self.db.audit(
+            self.guild_id,
+            interaction.user.id,
+            "team_owner_released",
+            target_type="user",
+            target_id=str(self.user_id),
+            details={"team": self.team_name, "reason": self.reason},
+        )
         current_member = interaction.guild.get_member(self.user_id) if interaction.guild else None
         if current_member:
             try:
@@ -126,14 +134,6 @@ class TeamReleaseConfirmationView(discord.ui.View):
         )
         for matchup in affected:
             await refresh_matchup_message(interaction.client, self.db, matchup["id"])
-        await self.db.audit(
-            self.guild_id,
-            interaction.user.id,
-            "team_owner_released",
-            target_type="user",
-            target_id=str(self.user_id),
-            details={"team": self.team_name, "reason": self.reason},
-        )
         from .open_teams_ui import refresh_open_team_card
         await refresh_open_team_card(interaction.client, self.db, self.guild_id, self.team_name)
         await _notify_release(
