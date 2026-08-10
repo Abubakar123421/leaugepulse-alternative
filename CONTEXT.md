@@ -15,7 +15,8 @@ The deployment target is bot-hosting.net. The repository is the source of truth 
 - The supplied fixture snapshot contains 272 regular-season games across Weeks 1–18.
 - The imported names include Black Knights (DEN), Condors (NE), and Dragons (DAL).
 - Team ownership lasts for the entire season.
-- Members claim with `/registerteam`; the Open Teams channel is a roster directory only.
+- Members can request an available franchise from its Open Teams **Claim Team** button. Commissioners approve or deny the pending request from persistent audit controls.
+- Commissioners can use `/assign-team` for direct assignment, or `replace_existing: True` for a mid-season replacement. Replacement updates unfinished matchup ownership while preserving completed games and history.
 - Commissioners can atomically assign 18–32 members with `/importmembers` using Discord IDs/usernames and team names.
 - `/setup` never creates permanent channels or categories. It saves metadata/roles and preserves existing destination mappings.
 - Permanent outputs are linked through `set...channel` commands and can be remapped after channel reorganization.

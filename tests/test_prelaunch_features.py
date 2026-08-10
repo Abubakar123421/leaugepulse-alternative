@@ -97,4 +97,4 @@ def test_open_team_card_uses_view_team_label():
 
 def test_team_card_is_roster_browsing_only() -> None:
     view = TeamCardView(1, "team-1", is_open=True)
-    assert [item.item.label for item in view.children] == ["View Team"]
+    assert [item.item.label for item in view.children] == ["View Team", "Claim Team"]
