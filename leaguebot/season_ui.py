@@ -12,6 +12,7 @@ from .season_lifecycle import (
     archive_season,
     force_delete_active_season,
     purge_active_season_discord_content,
+    purge_generated_matchup_channels,
     reset_active_season_test_data,
     resume_season_cleanup,
     rotate_discord_season_space,
@@ -83,29 +84,12 @@ class SeasonTestResetConfirmationView(discord.ui.View):
         await interaction.response.defer(ephemeral=True, thinking=True)
         errors: list[str] = []
         guild = interaction.guild
-        category_rows = await self.db.fetchall(
-            """SELECT category_id FROM week_categories
-               WHERE guild_id=? AND season=? ORDER BY week""",
-            (self.guild_id, self.season),
-        )
         if guild:
-            for row in category_rows:
-                category = guild.get_channel(row["category_id"] or 0)
-                if not isinstance(category, discord.CategoryChannel):
-                    continue
-                for channel in list(category.channels):
-                    try:
-                        await channel.delete(reason=f"Resetting Season {self.season} test data")
-                    except discord.NotFound:
-                        pass
-                    except (discord.Forbidden, discord.HTTPException) as exc:
-                        errors.append(f"{channel.name}: {exc}")
-                try:
-                    await category.delete(reason=f"Resetting Season {self.season} test data")
-                except discord.NotFound:
-                    pass
-                except (discord.Forbidden, discord.HTTPException) as exc:
-                    errors.append(f"{category.name}: {exc}")
+            errors.extend(
+                await purge_generated_matchup_channels(
+                    guild, self.db, season=self.season
+                )
+            )
         else:
             errors.append("The server is no longer available to the bot.")
         try:
@@ -190,23 +174,27 @@ def season_force_delete_embed(
     preview: SeasonForceDeletePreview,
     *,
     new_season: str,
+    erase_completed_history: bool,
 ) -> discord.Embed:
     embed = discord.Embed(
-        title=f"Force Delete Test Season {preview.season}",
+        title=f"Reset Test Season {preview.season}",
         description=(
-            "This permanently discards the active season without requiring completed "
-            f"games or awards, then changes the active season to **{new_season}**."
+            "This clears active test operations and imported league data, then changes "
+            f"the active season to **{new_season}**."
         ),
-        color=discord.Color.red(),
+        color=(discord.Color.red() if erase_completed_history else discord.Color.gold()),
     )
     embed.add_field(
-        name="Will Be Permanently Removed",
+        name="Will Be Removed",
         value=(
             f"• {preview.matchups} matchup(s) and every pending result/dispute\n"
             f"• {preview.franchises} franchise(s) and {preview.roster_players} roster player(s)\n"
             f"• {preview.owners} active owner assignment(s)\n"
-            f"• {preview.tracked_posts} tracked season post(s), weekly channels, reminders, "
-            "awards, recaps, XP earned in this season, and test history"
+            f"• {preview.tracked_posts} tracked post(s) and "
+            f"{preview.matchup_channels} tracked matchup channel(s)\n"
+            f"• Up to {preview.generated_week_categories} generated week category/categories, "
+            "only after they are empty\n"
+            "• Reminders, pending registrations/claims, awards, recaps, and test imports"
         ),
         inline=False,
     )
@@ -215,13 +203,28 @@ def season_force_delete_embed(
         value=(
             "• Commissioner role and all configured permanent destination channels\n"
             "• Team-role definitions (members are removed)\n"
-            "• Previously archived seasons and career totals earned outside this season\n"
-            "• Bot settings and integration configuration"
+            "• Manually created or untracked channels, categories, and all audit logs\n"
+            "• Previously archived seasons, bot settings, and integration configuration\n"
+            + (
+                "• Career totals and completed history outside this active season"
+                if erase_completed_history
+                else f"• {preview.completed_matchups} completed active-season result(s), "
+                     "career totals, XP, and permanent game history"
+            )
         ),
         inline=False,
     )
+    if erase_completed_history:
+        embed.add_field(
+            name="Explicit History Erasure Enabled",
+            value=(
+                f"{preview.completed_matchups} completed active-season result(s), their "
+                "career/XP contribution, participant history, and career events will be erased."
+            ),
+            inline=False,
+        )
     embed.set_footer(
-        text="Use this only for demos/tests. This action cannot be undone without a database backup."
+        text="Use /backup first. Nothing is removed until the requesting Commissioner confirms."
     )
     return embed
 
@@ -235,6 +238,7 @@ class SeasonForceDeleteConfirmationView(discord.ui.View):
         season: str,
         new_season: str,
         actor_id: int,
+        erase_completed_history: bool,
     ):
         super().__init__(timeout=180)
         self.db = db
@@ -242,9 +246,10 @@ class SeasonForceDeleteConfirmationView(discord.ui.View):
         self.season = season
         self.new_season = new_season
         self.actor_id = actor_id
+        self.erase_completed_history = erase_completed_history
 
     @discord.ui.button(
-        label="Permanently Delete Test Season",
+        label="Reset Test Season",
         style=discord.ButtonStyle.danger,
     )
     async def confirm(
@@ -286,18 +291,33 @@ class SeasonForceDeleteConfirmationView(discord.ui.View):
                 season=self.season,
                 new_season=self.new_season,
                 actor_id=interaction.user.id,
+                erase_completed_history=self.erase_completed_history,
             )
         except ValueError as exc:
             await interaction.edit_original_response(content=str(exc), view=None)
             return
 
         cleanup_errors = discord_errors + role_errors
+        if guild:
+            refreshed_settings = await self.db.settings(self.guild_id)
+            open_channel = guild.get_channel(
+                refreshed_settings.get("open_teams_channel_id") or 0
+            )
+            if isinstance(open_channel, discord.TextChannel):
+                from .open_teams_ui import post_open_teams_panel
+                try:
+                    await post_open_teams_panel(
+                        interaction.client, self.db, guild, open_channel
+                    )
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    cleanup_errors.append(f"Open Teams refresh: {exc}")
         summary = (
-            f"🧹 **Season {result.season} permanently deleted**\n"
+            f"🧹 **Season {result.season} test data reset**\n"
             f"Matchups deleted: **{result.matchups_deleted}**\n"
             f"Franchises deleted: **{result.franchises_deleted}**\n"
             f"Roster players deleted: **{result.roster_players_deleted}**\n"
             f"Owner assignments deleted: **{result.owners_deleted}**\n"
+            f"Completed history: **{'Erased by explicit choice' if result.completed_history_erased else 'Preserved'}**\n"
             f"New empty season: **{result.new_season}**\n"
             f"Discord cleanup: **{'Complete' if not cleanup_errors else 'Partial'}**"
         )

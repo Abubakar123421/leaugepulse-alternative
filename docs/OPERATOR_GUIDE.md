@@ -31,6 +31,8 @@ Run `/destinations` to verify the routing. Any mapping can be changed later by r
 1. `/importrosters` with `output/neonsportz-derived/madden_team_rosters.csv`; review and confirm.
 2. `/syncteamemojis` if the server has team emojis.
 3. Members claim from an Open Teams card, or a commissioner runs `/importmembers`. The recommended CSV header is `team,discord_id,twitch,youtube`; `discord_username` may replace `discord_id`, but IDs are more reliable.
+
+During the active week, owners communicate directly inside their generated matchup channel. When finished, either owner presses **Game Complete / Submit Score** and enters the two team scores. Commissioners review the resulting audit card with **Approve**, **Edit Score**, or **Reject**. Approval updates records/history and automatically locks the channel.
 4. Use `/syncmemberroles` if Discord role synchronization reported failures.
 5. `/importfixtures` with `output/neonsportz-derived/madden_18_week_fixtures.csv`. Use `start_now:True` to create Week 1 and begin the seven-day clock.
 
@@ -38,9 +40,8 @@ Run `/destinations` to verify the routing. Any mapping can be changed later by r
 
 - Each active week has a top-level `WEEK X MATCHUPS` category.
 - Only assigned owners and commissioners can interact; everyone else is read-only.
-- Reactions schedule/counter/confirm times, submit results, and request outcomes.
-- **Report Dispute** opens a private form whose reason goes to commissioner audit.
-- `/week number:<week>` opens the commissioner dashboard for approvals, force wins, fair simulations, reminders, issue review, and advancement.
+- Owners schedule through ordinary channel conversation and submit the final score from the matchup card; no player commands, reactions, or matchup IDs are required.
+- `/week number:<week>` remains a commissioner-only operational dashboard for reminders, exceptional rulings, and advancement.
 - `/gameoftheweek week:<week> matchup_id:<choice> graphic:<image>` posts the vote graphic to the configured polls channel.
 - Advancement creates the next week first and then removes the old Discord category/channels. Database history is retained.
 
@@ -49,12 +50,12 @@ If a Game of the Week picker appears empty, enter the `week` option first; the m
 ## Rosters and owners
 
 - `/roster team:<team>` and `/playersearch player:<name>` query imported data.
-- Open Teams cards provide **View Team** only. Claims use `/registerteam`.
+- Available Open Teams cards provide **View Team** and **Claim Team**. Claims remain pending until a commissioner approves or denies the audit card.
 - `/team-release` safely removes an owner, reopens eligible unfinished games, and preserves history.
 
 ## Results
 
-Owners submit an away-home score with one PNG/JPG/WebP evidence image. The opponent can confirm or dispute; commissioners make the official decision. Approved/forced/sim outcomes post once to final scores and update records/XP.
+Either assigned owner presses **Game Complete / Submit Score**, enters the two team-labeled scores, and sends the result to commissioner audit. Commissioners can **Approve**, **Edit Score**, or **Reject**. Approval posts the official result once, updates records/history/XP, and locks the matchup channel.
 
 ## AI and streams
 
@@ -71,7 +72,7 @@ Owners submit an away-home score with one PNG/JPG/WebP evidence image. The oppon
 4. If cleanup partially fails, fix Discord permissions and run `/season-cleanup`.
 
 The bot preserves compact results, careers, XP, ownership history, and awards while clearing active operational data and team-role members.
-### Force-delete a demo or test season
+### Fully reset a demo or test season
 
 Use this only when the active season is disposable and must be reset even though games or awards are unfinished.
 
@@ -79,10 +80,11 @@ For ordinary schedule/channel testing, use `/season-test-reset confirmation:RESE
 
 1. Run `/backup` and download the database file.
 2. Run `/season-force-delete new_season:<new name> confirmation:DELETE <current season>`.
-3. Review the private deletion preview and press **Permanently Delete Test Season**.
-4. Reimport rosters, repost the Open Teams directory, assign owners, and reimport fixtures.
+3. Review the private deletion preview and press **Reset Test Season**. Completed game/career history is preserved by default.
+4. To explicitly erase completed active-season history too, set `erase_completed_history:true` and enter `confirmation:DELETE HISTORY <current season>`.
+5. Reimport rosters, assign owners, and reimport fixtures. The Open Teams header is already refreshed to an empty state.
 
-This removes the active season's rosters, fixtures, owners, result evidence, tracked posts, weekly channels, recaps, awards, reminders, and XP earned in that season. It preserves configured permanent destination channels, the Commissioner role, empty team-role definitions, other Discord servers, and previously archived history. The old season name must match exactly in the confirmation text.
+This removes the active season's rosters, fixtures, owners, claims, result workflow, tracked posts, generated matchup channels, recaps, awards, and reminders. It deletes only database-tracked matchup channels; a generated week category is deleted only when empty, so manually created or untracked channels remain untouched. It preserves configured permanent destination channels, the Commissioner role, team-role definitions, audit logs, other Discord servers, and previously archived history. It posts a clean empty Open Teams dashboard in the configured channel. Completed active-season game/career history and XP are preserved unless the Commissioner explicitly enables history erasure with the stronger confirmation phrase.
 
 ## Troubleshooting
 

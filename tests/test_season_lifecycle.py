@@ -115,7 +115,7 @@ async def test_unresolved_season_cannot_be_archived(tmp_path):
     assert (await db.settings(1))["season"] == "1"
 
 @pytest.mark.asyncio
-async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(tmp_path):
+async def test_force_delete_active_test_season_preserves_history_and_audit_by_default(tmp_path):
     db = Database(tmp_path / "force-delete.sqlite3")
     await db.initialize()
     await db.update_settings(
@@ -170,9 +170,16 @@ async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(t
     await db.execute(
         """INSERT INTO matchups
            (guild_id,season,week,external_key,away_team,home_team,
-            away_user_id,status,created_at,updated_at)
-           VALUES (1,'Demo',1,'demo-game','Bears','Packers',10,'waiting','now','now'),
-                  (2,'Demo',1,'other-game','Packers','Bears',20,'waiting','now','now')"""
+            away_user_id,away_score,home_score,status,created_at,updated_at)
+           VALUES (1,'Demo',1,'demo-game','Bears','Packers',10,24,10,'complete','now','now'),
+                  (2,'Demo',1,'other-game','Packers','Bears',20,NULL,NULL,'waiting','now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO game_history
+           (guild_id,season,week,external_key,away_team,home_team,away_user_id,
+            away_score,home_score,status,winner_user_id,decision_type,completed_at)
+           VALUES (1,'Demo',1,'demo-game','Bears','Packers',10,24,10,
+                   'complete',10,'approved','now')"""
     )
     await db.execute(
         """INSERT INTO open_rosters
@@ -200,6 +207,8 @@ async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(t
         actor_id=99,
     )
     assert (result.matchups_deleted, result.roster_players_deleted) == (1, 1)
+    assert result.completed_history_erased is False
+    assert result.completed_history_preserved == 1
 
     settings = await db.settings(1)
     assert settings["season"] == "Launch"
@@ -212,7 +221,7 @@ async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(t
 
     for table in (
         "matchups", "franchises", "roster_players", "profiles",
-        "open_rosters", "season_participants", "career_events",
+        "open_rosters",
     ):
         assert await db.fetchone(
             f"SELECT 1 FROM {table} WHERE guild_id=1 AND "
@@ -223,7 +232,16 @@ async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(t
         "SELECT * FROM career_profiles WHERE guild_id=1 AND user_id=10"
     )
     assert (career["games"], career["wins"], career["losses"], career["xp"]) == (
-        2, 1, 1, 200
+        3, 2, 1, 300
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM season_participants WHERE guild_id=1 AND season='Demo'"
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM career_events WHERE guild_id=1 AND season='Demo'"
+    )
+    assert await db.fetchone(
+        "SELECT 1 FROM game_history WHERE guild_id=1 AND season='Demo'"
     )
     assert await db.fetchone(
         "SELECT 1 FROM season_archives WHERE guild_id=1 AND season='Archived'"
@@ -240,10 +258,76 @@ async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(t
     assert await db.fetchone(
         "SELECT 1 FROM audit_logs WHERE guild_id=2 AND action='other_guild_action'"
     )
-    audit = await db.fetchone(
-        "SELECT * FROM audit_logs WHERE guild_id=1"
+    audits = await db.fetchall(
+        "SELECT action FROM audit_logs WHERE guild_id=1 ORDER BY id"
     )
-    assert audit["action"] == "season_force_deleted"
+    assert [row["action"] for row in audits] == [
+        "demo_action", "season_force_deleted"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_force_delete_erases_completed_history_only_when_explicit(tmp_path):
+    db = Database(tmp_path / "force-delete-history.sqlite3")
+    await db.initialize()
+    await db.update_settings(1, season="Demo")
+    await db.execute(
+        """INSERT INTO career_profiles
+           (guild_id,user_id,games,wins,points_for,points_against,xp,created_at,updated_at)
+           VALUES (1,10,2,2,48,20,200,'now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO season_participants
+           (guild_id,season,user_id,team_name,games,wins,points_for,
+            points_against,xp,joined_at,updated_at)
+           VALUES (1,'Demo',10,'Bears',1,1,24,10,100,'now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO career_events
+           (guild_id,season,source_key,user_id,event_type,xp,created_at)
+           VALUES (1,'Demo','1:demo-game',10,'complete',100,'now')"""
+    )
+    await db.execute(
+        """INSERT INTO game_history
+           (guild_id,season,week,external_key,away_team,home_team,away_user_id,
+            away_score,home_score,status,winner_user_id,decision_type,completed_at)
+           VALUES (1,'Demo',1,'demo-game','Bears','Packers',10,24,10,
+                   'complete',10,'approved','now')"""
+    )
+    await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,away_user_id,
+            away_score,home_score,status,created_at,updated_at)
+           VALUES (1,'Demo',1,'demo-game','Bears','Packers',10,24,10,
+                   'complete','now','now')"""
+    )
+    await db.audit(1, 10, "setup_preserved")
+
+    result = await force_delete_active_season(
+        db,
+        guild_id=1,
+        season="Demo",
+        new_season="Launch",
+        actor_id=99,
+        erase_completed_history=True,
+    )
+
+    assert result.completed_history_erased is True
+    assert result.completed_history_preserved == 0
+    for table in ("season_participants", "career_events", "game_history"):
+        assert await db.fetchone(
+            f"SELECT 1 FROM {table} WHERE guild_id=1 AND season='Demo'"
+        ) is None
+    career = await db.fetchone(
+        "SELECT * FROM career_profiles WHERE guild_id=1 AND user_id=10"
+    )
+    assert (career["games"], career["wins"], career["xp"]) == (1, 1, 100)
+    audits = await db.fetchall(
+        "SELECT action FROM audit_logs WHERE guild_id=1 ORDER BY id"
+    )
+    assert [row["action"] for row in audits] == [
+        "setup_preserved", "season_force_deleted"
+    ]
 
 
 @pytest.mark.asyncio

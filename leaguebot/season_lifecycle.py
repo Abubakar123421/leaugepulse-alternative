@@ -54,6 +54,9 @@ class SeasonForceDeletePreview:
     roster_players: int
     owners: int
     tracked_posts: int
+    completed_matchups: int
+    matchup_channels: int
+    generated_week_categories: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,8 @@ class SeasonForceDeleteResult:
     franchises_deleted: int
     roster_players_deleted: int
     owners_deleted: int
+    completed_history_erased: bool
+    completed_history_preserved: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +142,9 @@ async def season_force_delete_preview(
              SELECT final_score_message_id FROM matchups
               WHERE guild_id=? AND season=? AND final_score_message_id IS NOT NULL
              UNION ALL
+             SELECT result_audit_message_id FROM matchups
+              WHERE guild_id=? AND season=? AND result_audit_message_id IS NOT NULL
+             UNION ALL
              SELECT message_id FROM weekly_recaps
               WHERE guild_id=? AND season=? AND message_id IS NOT NULL
              UNION ALL
@@ -152,6 +160,7 @@ async def season_force_delete_preview(
         (
             guild_id, season, guild_id, season, guild_id, season,
             guild_id, season, guild_id, season, guild_id, season,
+            guild_id, season,
         ),
     )
     return SeasonForceDeletePreview(
@@ -174,6 +183,22 @@ async def season_force_delete_preview(
             (guild_id,),
         ),
         tracked_posts=tracked_posts,
+        completed_matchups=await count(
+            """SELECT COUNT(*) AS total FROM matchups
+               WHERE guild_id=? AND season=? AND status IN
+               ('complete','force_home','force_away','fair_sim')""",
+            (guild_id, season),
+        ),
+        matchup_channels=await count(
+            """SELECT COUNT(DISTINCT channel_id) AS total FROM matchups
+               WHERE guild_id=? AND season=? AND channel_id IS NOT NULL""",
+            (guild_id, season),
+        ),
+        generated_week_categories=await count(
+            """SELECT COUNT(DISTINCT category_id) AS total FROM week_categories
+               WHERE guild_id=? AND season=?""",
+            (guild_id, season),
+        ),
     )
 
 
@@ -294,8 +319,9 @@ async def force_delete_active_season(
     season: str,
     new_season: str,
     actor_id: int,
+    erase_completed_history: bool = False,
 ) -> SeasonForceDeleteResult:
-    """Permanently discard one active test season without touching other guilds/history."""
+    """Discard active test operations while preserving completed history by default."""
     clean_new_season = " ".join(new_season.split())
     if not clean_new_season:
         raise ValueError("The replacement season name cannot be empty.")
@@ -306,8 +332,14 @@ async def force_delete_active_season(
     existing_new = await db.fetchone(
         """SELECT 1 FROM season_archives WHERE guild_id=? AND season=?
            UNION SELECT 1 FROM matchups WHERE guild_id=? AND season=?
-           UNION SELECT 1 FROM franchises WHERE guild_id=? AND season=? LIMIT 1""",
+           UNION SELECT 1 FROM franchises WHERE guild_id=? AND season=?
+           UNION SELECT 1 FROM game_history WHERE guild_id=? AND season=?
+           UNION SELECT 1 FROM season_participants WHERE guild_id=? AND season=?
+           UNION SELECT 1 FROM career_events WHERE guild_id=? AND season=? LIMIT 1""",
         (
+            guild_id, clean_new_season,
+            guild_id, clean_new_season,
+            guild_id, clean_new_season,
             guild_id, clean_new_season,
             guild_id, clean_new_season,
             guild_id, clean_new_season,
@@ -331,36 +363,37 @@ async def force_delete_active_season(
                 "The active season changed before confirmation. Run the command again."
             )
 
-        # Remove only this season's contribution from permanent career totals.
-        cursor = await conn.execute(
-            """SELECT user_id,SUM(games) AS games,SUM(wins) AS wins,
-                      SUM(losses) AS losses,SUM(force_wins) AS force_wins,
-                      SUM(forfeits) AS forfeits,SUM(sims) AS sims,
-                      SUM(points_for) AS points_for,
-                      SUM(points_against) AS points_against,
-                      SUM(xp) AS xp,SUM(champion) AS championships
-               FROM season_participants
-              WHERE guild_id=? AND season=? GROUP BY user_id""",
-            (guild_id, season),
-        )
-        for row in await cursor.fetchall():
-            await conn.execute(
-                """UPDATE career_profiles SET
-                     games=MAX(0,games-?),wins=MAX(0,wins-?),
-                     losses=MAX(0,losses-?),force_wins=MAX(0,force_wins-?),
-                     forfeits=MAX(0,forfeits-?),sims=MAX(0,sims-?),
-                     points_for=MAX(0,points_for-?),
-                     points_against=MAX(0,points_against-?),
-                     xp=MAX(0,xp-?),championships=MAX(0,championships-?),
-                     updated_at=?
-                   WHERE guild_id=? AND user_id=?""",
-                (
-                    row["games"], row["wins"], row["losses"],
-                    row["force_wins"], row["forfeits"], row["sims"],
-                    row["points_for"], row["points_against"], row["xp"],
-                    row["championships"], now, guild_id, row["user_id"],
-                ),
+        if erase_completed_history:
+            # Explicit history erasure reverses only this season's career contribution.
+            cursor = await conn.execute(
+                """SELECT user_id,SUM(games) AS games,SUM(wins) AS wins,
+                          SUM(losses) AS losses,SUM(force_wins) AS force_wins,
+                          SUM(forfeits) AS forfeits,SUM(sims) AS sims,
+                          SUM(points_for) AS points_for,
+                          SUM(points_against) AS points_against,
+                          SUM(xp) AS xp,SUM(champion) AS championships
+                   FROM season_participants
+                  WHERE guild_id=? AND season=? GROUP BY user_id""",
+                (guild_id, season),
             )
+            for row in await cursor.fetchall():
+                await conn.execute(
+                    """UPDATE career_profiles SET
+                         games=MAX(0,games-?),wins=MAX(0,wins-?),
+                         losses=MAX(0,losses-?),force_wins=MAX(0,force_wins-?),
+                         forfeits=MAX(0,forfeits-?),sims=MAX(0,sims-?),
+                         points_for=MAX(0,points_for-?),
+                         points_against=MAX(0,points_against-?),
+                         xp=MAX(0,xp-?),championships=MAX(0,championships-?),
+                         updated_at=?
+                       WHERE guild_id=? AND user_id=?""",
+                    (
+                        row["games"], row["wins"], row["losses"],
+                        row["force_wins"], row["forfeits"], row["sims"],
+                        row["points_for"], row["points_against"], row["xp"],
+                        row["championships"], now, guild_id, row["user_id"],
+                    ),
+                )
 
         # Child rows are explicit so cleanup remains reliable on older databases.
         await conn.execute(
@@ -377,28 +410,29 @@ async def force_delete_active_season(
             "DELETE FROM matchup_cases WHERE guild_id=? AND season=?",
             (guild_id, season),
         )
-        season_tables = (
+        operational_tables = (
             "game_of_week_posts", "weekly_recaps", "weekly_mvps",
             "season_award_summaries", "season_awards", "ai_jobs",
-            "week_rollovers", "week_categories", "game_history",
-            "career_events", "season_participants", "transactions",
-            "trade_block", "open_rosters", "open_team_cards",
+            "week_rollovers", "week_categories", "transactions", "trade_block",
+            "open_rosters", "open_team_cards",
             "roster_players", "franchises", "teams", "matchups",
         )
-        for table in season_tables:
+        if erase_completed_history:
+            operational_tables += ("game_history", "career_events", "season_participants")
+        for table in operational_tables:
             await conn.execute(
                 f"DELETE FROM {table} WHERE guild_id=? AND season=?",
                 (guild_id, season),
             )
         await conn.execute("DELETE FROM profiles WHERE guild_id=?", (guild_id,))
-        await conn.execute("DELETE FROM audit_logs WHERE guild_id=?", (guild_id,))
-        await conn.execute(
-            """DELETE FROM career_profiles WHERE guild_id=?
-               AND games=0 AND wins=0 AND losses=0 AND force_wins=0
-               AND forfeits=0 AND sims=0 AND points_for=0
-               AND points_against=0 AND xp=0 AND championships=0""",
-            (guild_id,),
-        )
+        if erase_completed_history:
+            await conn.execute(
+                """DELETE FROM career_profiles WHERE guild_id=?
+                   AND games=0 AND wins=0 AND losses=0 AND force_wins=0
+                   AND forfeits=0 AND sims=0 AND points_for=0
+                   AND points_against=0 AND xp=0 AND championships=0""",
+                (guild_id,),
+            )
         await conn.execute(
             """UPDATE guild_settings SET season=?,current_week=1,
                       category_id=NULL,matchup_category_id=NULL,
@@ -413,7 +447,12 @@ async def force_delete_active_season(
                VALUES (?,?,?,?,?,?,?)""",
             (
                 guild_id, actor_id, "season_force_deleted", "season", season,
-                json.dumps({"replacement_season": clean_new_season}), now,
+                json.dumps({
+                    "replacement_season": clean_new_season,
+                    "erase_completed_history": erase_completed_history,
+                    "completed_history_records": preview.completed_matchups,
+                    "audit_logs_preserved": True,
+                }), now,
             ),
         )
         await conn.commit()
@@ -426,7 +465,91 @@ async def force_delete_active_season(
         franchises_deleted=preview.franchises,
         roster_players_deleted=preview.roster_players,
         owners_deleted=preview.owners,
+        completed_history_erased=erase_completed_history,
+        completed_history_preserved=(
+            0 if erase_completed_history else preview.completed_matchups
+        ),
     )
+
+
+async def purge_generated_matchup_channels(
+    guild: discord.Guild,
+    db: Database,
+    *,
+    season: str,
+) -> list[str]:
+    """Delete only tracked matchup channels and generated categories left empty."""
+    settings = await db.settings(guild.id)
+    warnings: list[str] = []
+    protected_channel_ids = {
+        int(value)
+        for key, value in settings.items()
+        if key.endswith("_channel_id")
+        and key not in {"category_id", "matchup_category_id"}
+        and value
+    }
+    matchup_channel_ids = {
+        int(row["channel_id"])
+        for row in await db.fetchall(
+            """SELECT DISTINCT channel_id FROM matchups
+               WHERE guild_id=? AND season=? AND channel_id IS NOT NULL""",
+            (guild.id, season),
+        )
+    }
+    category_ids = {
+        int(row["category_id"])
+        for row in await db.fetchall(
+            """SELECT DISTINCT category_id FROM week_categories
+               WHERE guild_id=? AND season=?""",
+            (guild.id, season),
+        )
+    }
+
+    removed_channel_ids: set[int] = set()
+    for channel_id in matchup_channel_ids:
+        if channel_id in protected_channel_ids:
+            warnings.append(
+                f"Preserved configured channel {channel_id}; it was also recorded as a matchup channel."
+            )
+            continue
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            removed_channel_ids.add(channel_id)
+            continue
+        if not isinstance(channel, discord.TextChannel):
+            warnings.append(
+                f"Preserved channel {channel_id}; its Discord type is not a matchup text channel."
+            )
+            continue
+        try:
+            await channel.delete(reason=f"Resetting Madden Season {season}")
+            removed_channel_ids.add(channel_id)
+        except discord.NotFound:
+            removed_channel_ids.add(channel_id)
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            warnings.append(f"{channel.name}: {exc}")
+
+    for category_id in category_ids:
+        category = guild.get_channel(category_id)
+        if not isinstance(category, discord.CategoryChannel):
+            continue
+        remaining = [
+            channel for channel in list(category.channels)
+            if channel.id not in removed_channel_ids
+        ]
+        if remaining:
+            warnings.append(
+                f"Preserved category {category.name}; it still contains "
+                f"{len(remaining)} non-matchup or undeleted channel(s)."
+            )
+            continue
+        try:
+            await category.delete(reason=f"Removing empty generated Season {season} category")
+        except discord.NotFound:
+            pass
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            warnings.append(f"{category.name}: {exc}")
+    return warnings
 
 
 async def purge_active_season_discord_content(
@@ -459,6 +582,15 @@ async def purge_active_season_discord_content(
             message_refs.add(
                 (settings["final_scores_channel_id"], row["final_score_message_id"])
             )
+    for row in await db.fetchall(
+        """SELECT result_audit_message_id FROM matchups
+           WHERE guild_id=? AND season=? AND result_audit_message_id IS NOT NULL""",
+        (guild.id, season),
+    ):
+        if settings.get("audit_channel_id"):
+            message_refs.add(
+                (settings["audit_channel_id"], row["result_audit_message_id"])
+            )
     for table in ("weekly_recaps", "game_of_week_posts", "season_award_summaries"):
         for row in await db.fetchall(
             f"""SELECT channel_id,message_id FROM {table}
@@ -489,27 +621,7 @@ async def purge_active_season_discord_content(
         except (discord.Forbidden, discord.HTTPException) as exc:
             errors.append(f"{channel.name} message {message_id}: {exc}")
 
-    for row in await db.fetchall(
-        """SELECT DISTINCT category_id FROM week_categories
-           WHERE guild_id=? AND season=?""",
-        (guild.id, season),
-    ):
-        category = guild.get_channel(row["category_id"] or 0)
-        if not isinstance(category, discord.CategoryChannel):
-            continue
-        for channel in list(category.channels):
-            try:
-                await channel.delete(reason=f"Force-deleting Madden Season {season}")
-            except discord.NotFound:
-                pass
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                errors.append(f"{channel.name}: {exc}")
-        try:
-            await category.delete(reason=f"Force-deleting Madden Season {season}")
-        except discord.NotFound:
-            pass
-        except (discord.Forbidden, discord.HTTPException) as exc:
-            errors.append(f"{category.name}: {exc}")
+    errors.extend(await purge_generated_matchup_channels(guild, db, season=season))
     return errors
 
 async def archive_season(

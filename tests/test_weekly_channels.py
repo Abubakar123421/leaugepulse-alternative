@@ -7,6 +7,7 @@ from leaguebot.channel_workflow import (
     DISPUTE,
     REACTIONS,
     _valid_action_message,
+    matchup_channel_embed,
 )
 from leaguebot.registration import registration_state
 from leaguebot.team_roles import MADDEN_TEAMS
@@ -67,3 +68,24 @@ def test_proposal_and_result_messages_accept_direct_reactions():
     assert _valid_action_message("result_pending", CONFIRM, "Score submitted with private evidence")
     assert _valid_action_message("result_pending", DISPUTE, "Score submitted with private evidence")
     assert not _valid_action_message("waiting", CONFIRM, "unrelated bot message")
+
+
+@pytest.mark.asyncio
+async def test_matchup_card_is_clean_and_owner_focused(tmp_path):
+    db = Database(tmp_path / "matchup-card.sqlite3")
+    await db.initialize()
+    matchup_id = await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,
+            away_user_id,home_user_id,status,created_at,updated_at)
+           VALUES (1,'1',4,'vikes-niners','Vikings','49ers',10,20,'waiting','now','now')"""
+    )
+    matchup = await db.fetchone("SELECT * FROM matchups WHERE id=?", (matchup_id,))
+    embed = await matchup_channel_embed(db, matchup, await db.settings(1))
+
+    assert embed.title == "Week 4 Matchup"
+    assert "Vikings" in embed.description
+    assert "49ers" in embed.description
+    assert embed.fields[0].value == "<@10>"
+    assert embed.fields[1].value == "<@20>"
+    assert all(field.name != "Reactions" for field in embed.fields)

@@ -11,9 +11,9 @@ The bot uses prepared CSV snapshots; it does not connect directly to NeonSportz.
 3. `/importrosters` imports `output/neonsportz-derived/madden_team_rosters.csv` (32 franchises, 2,074 players).
 4. `/setopenteamlist` posts one roster card per franchise with private paginated **View Team** and **Claim Team** controls. Claims remain pending until a commissioner uses the persistent Approve/Deny review buttons. Commissioners can directly assign or replace one owner with `/assign-team`, or bulk-assign owners with `/importmembers`.
 5. `/importfixtures` imports `output/neonsportz-derived/madden_18_week_fixtures.csv` (272 fixtures, Weeks 1–18). Team ownership lasts for the full season.
-6. The active week gets a top-level `WEEK X MATCHUPS` category and one channel per fixture. Rollover creates the next week first, then deletes the previous week’s channels/category. Results and history remain in SQLite.
+6. The active week gets a top-level `WEEK X MATCHUPS` category and one channel per fixture. Each channel contains one owner-tagged matchup card and one **Game Complete / Submit Score** button. Rollover creates the next week first, then deletes the previous week’s channels/category. Results and history remain in SQLite.
 
-Matchup cards are not pinned. Owners use reactions to schedule, counter, confirm, submit a score/screenshot, and request rulings. **Report Dispute** opens a private form and sends a numbered case to commissioner audit. Official results post exactly once to the configured final-score channel.
+Matchup cards are not pinned. Owners coordinate normally in their matchup channel and submit both final scores from the card—no matchup IDs or slash commands are required. Commissioner audit receives an **Approve / Edit Score / Reject** review card. Approval finalizes standings and history, posts the official result once, and locks/renames the matchup channel.
 
 ## Permanent destination commands
 
@@ -36,7 +36,7 @@ Weekly matchup categories are automatic and are not mapped to a permanent catego
 - Runtime custom-team-emoji resolution by emoji name via `/syncteamemojis` and `/setteamemoji`; Discord emoji IDs are never hardcoded.
 - Commissioner dashboards, force wins, fair simulations, result evidence/review, team release, and restart-safe reminders.
 - Career profiles, XP, leaderboard, season history, archival, and retryable season cleanup.
-- Confirmation-protected `/season-force-delete` for discarding an active demo/test season without affecting other servers or prior archives.
+- Confirmation-protected `/season-force-delete` clears an active demo/test season, imports, ownership, claims, and tracked Discord content while preserving audit logs, permanent configuration, manual channels, and completed history by default. Set `erase_completed_history:true` with the stronger confirmation phrase only when active-season career/history must also be erased.
 - Confirmation-protected `/season-test-reset` removes generated weekly channels and resets unfinished matchup workflow while preserving completed results, career history, rosters, fixtures, and ownership.
 - Game of the Week graphics with team-emoji voting.
 - Deterministic rankings/weekly recap facts, season awards, and optional Gemini narrative generation.
