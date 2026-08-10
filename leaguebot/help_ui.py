@@ -12,7 +12,7 @@ CATEGORIES = {
     "Career and History": {"profile", "leaderboard", "season-history"},
     "Commissioner Commands": {
         "setup", "settings", "profile-approve", "assign-team", "team-release",
-        "importrosters", "importfixtures", "importmembers", "import-schedule", "week", "season-close", "season-force-delete",
+        "importrosters", "importfixtures", "importmembers", "import-schedule", "week", "season-close", "season-test-reset", "season-force-delete",
         "season-cleanup", "announce", "award", "seasonaward", "seasonawards", "gameoftheweek", "weekmvp", "syncteamemojis", "setteamemoji", "backup", "createweek",
         "destinations", "setannouncementchannel",
         "setscorechannel", "setstreamchannel", "setstorylinechannel",

@@ -4,8 +4,10 @@ from leaguebot.db import Database
 from leaguebot.season_lifecycle import (
     archive_season,
     force_delete_active_season,
+    reset_active_season_test_data,
     season_close_preview,
     season_force_delete_preview,
+    season_test_reset_preview,
 )
 from leaguebot.awards import AWARD_CATEGORIES, set_season_award
 
@@ -242,3 +244,80 @@ async def test_force_delete_active_test_season_is_scoped_and_reverses_progress(t
         "SELECT * FROM audit_logs WHERE guild_id=1"
     )
     assert audit["action"] == "season_force_deleted"
+
+
+@pytest.mark.asyncio
+async def test_safe_test_reset_preserves_completed_history_and_resets_unfinished(tmp_path):
+    db = Database(tmp_path / "safe-reset.sqlite3")
+    await db.initialize()
+    await db.update_settings(1, season="Demo", current_week=3)
+    await db.execute(
+        """INSERT INTO career_profiles
+           (guild_id,user_id,games,wins,xp,created_at,updated_at)
+           VALUES (1,10,1,1,100,'now','now')"""
+    )
+    await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,away_user_id,
+            home_user_id,away_score,home_score,status,channel_id,message_id,
+            result_submitted_by,result_evidence_url,created_at,updated_at)
+           VALUES
+           (1,'Demo',1,'final','49ers','Bears',10,20,24,17,'complete',111,222,
+            10,'https://example.test/final.png','now','now'),
+           (1,'Demo',3,'pending','Cardinals','Rams',30,40,21,20,'result_pending',333,444,
+            30,'https://example.test/pending.png','now','now')"""
+    )
+    pending = await db.fetchone("SELECT id FROM matchups WHERE external_key='pending'")
+    await db.execute(
+        """INSERT INTO matchup_prompts
+           (matchup_id,user_id,kind,expires_at,created_at)
+           VALUES (?,30,'result','later','now')""",
+        (pending["id"],),
+    )
+    await db.execute(
+        """INSERT INTO reminder_deliveries (matchup_id,milestone,delivered_at)
+           VALUES (?,'24h','now')""",
+        (pending["id"],),
+    )
+    await db.execute(
+        """INSERT INTO matchup_cases
+           (matchup_id,guild_id,season,opened_by,kind,reason,created_at)
+           VALUES (?,1,'Demo',30,'dispute','test case','now')""",
+        (pending["id"],),
+    )
+    await db.execute(
+        """INSERT INTO week_categories
+           (guild_id,season,week,category_id,created_at)
+           VALUES (1,'Demo',3,999,'now')"""
+    )
+
+    preview = await season_test_reset_preview(db, 1, "Demo")
+    assert (preview.unfinished_matchups, preview.completed_matchups) == (1, 1)
+    result = await reset_active_season_test_data(
+        db, guild_id=1, season="Demo", actor_id=99
+    )
+    assert (result.matchups_reset, result.completed_matchups_preserved) == (1, 1)
+
+    final = await db.fetchone("SELECT * FROM matchups WHERE external_key='final'")
+    assert (final["status"], final["away_score"], final["home_score"]) == (
+        "complete", 24, 17
+    )
+    assert final["final_score_message_id"] is None
+    assert final["channel_id"] is None
+    reset = await db.fetchone("SELECT * FROM matchups WHERE external_key='pending'")
+    assert reset["status"] == "waiting"
+    assert reset["away_score"] is None
+    assert reset["result_evidence_url"] is None
+    assert reset["channel_id"] is None
+    assert await db.fetchone("SELECT 1 FROM matchup_prompts") is None
+    assert await db.fetchone("SELECT 1 FROM reminder_deliveries") is None
+    assert await db.fetchone("SELECT 1 FROM matchup_cases") is None
+    assert await db.fetchone("SELECT 1 FROM week_categories") is None
+    career = await db.fetchone("SELECT * FROM career_profiles WHERE guild_id=1")
+    assert (career["games"], career["wins"], career["xp"]) == (1, 1, 100)
+    settings = await db.settings(1)
+    assert settings["current_week"] == 1
+    audit = await db.fetchone(
+        "SELECT * FROM audit_logs WHERE guild_id=1 AND action='season_test_data_reset'"
+    )
+    assert audit["actor_id"] == 99

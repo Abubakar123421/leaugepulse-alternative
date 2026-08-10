@@ -425,6 +425,12 @@ class ClaimReviewButton(
         except OwnershipError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
+        action_word = "approved" if approved else "denied"
+        await db.audit(
+            self.guild_id, interaction.user.id, f"team_claim_{action_word}",
+            target_type="user", target_id=str(self.user_id),
+            details={"team": assignment.team_name},
+        )
         errors: list[str] = []
         if approved:
             errors = await sync_assignment_discord(
@@ -433,12 +439,6 @@ class ClaimReviewButton(
         await refresh_open_team_card(
             interaction.client, db, self.guild_id,
             assignment.external_team_id or assignment.team_name,
-        )
-        action_word = "approved" if approved else "denied"
-        await db.audit(
-            self.guild_id, interaction.user.id, f"team_claim_{action_word}",
-            target_type="user", target_id=str(self.user_id),
-            details={"team": assignment.team_name, "role_sync_errors": errors},
         )
         resolved_embed = discord.Embed(
             title=f"Team Claim {action_word.title()}",

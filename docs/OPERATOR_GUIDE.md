@@ -30,7 +30,7 @@ Run `/destinations` to verify the routing. Any mapping can be changed later by r
 
 1. `/importrosters` with `output/neonsportz-derived/madden_team_rosters.csv`; review and confirm.
 2. `/syncteamemojis` if the server has team emojis.
-3. Members claim with `/registerteam`, or a commissioner runs `/importmembers` with a CSV containing `team` plus `discord_id` or a unique `discord_username`.
+3. Members claim from an Open Teams card, or a commissioner runs `/importmembers`. The recommended CSV header is `team,discord_id,twitch,youtube`; `discord_username` may replace `discord_id`, but IDs are more reliable.
 4. Use `/syncmemberroles` if Discord role synchronization reported failures.
 5. `/importfixtures` with `output/neonsportz-derived/madden_18_week_fixtures.csv`. Use `start_now:True` to create Week 1 and begin the seven-day clock.
 
@@ -74,6 +74,8 @@ The bot preserves compact results, careers, XP, ownership history, and awards wh
 ### Force-delete a demo or test season
 
 Use this only when the active season is disposable and must be reset even though games or awards are unfinished.
+
+For ordinary schedule/channel testing, use `/season-test-reset confirmation:RESET <current season>` instead. It returns unfinished matchups to `waiting`, removes generated weekly channels and pending workflow data, and preserves completed results, career history, rosters, fixtures, and ownership.
 
 1. Run `/backup` and download the database file.
 2. Run `/season-force-delete new_season:<new name> confirmation:DELETE <current season>`.

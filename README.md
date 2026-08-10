@@ -37,6 +37,7 @@ Weekly matchup categories are automatic and are not mapped to a permanent catego
 - Commissioner dashboards, force wins, fair simulations, result evidence/review, team release, and restart-safe reminders.
 - Career profiles, XP, leaderboard, season history, archival, and retryable season cleanup.
 - Confirmation-protected `/season-force-delete` for discarding an active demo/test season without affecting other servers or prior archives.
+- Confirmation-protected `/season-test-reset` removes generated weekly channels and resets unfinished matchup workflow while preserving completed results, career history, rosters, fixtures, and ownership.
 - Game of the Week graphics with team-emoji voting.
 - Deterministic rankings/weekly recap facts, season awards, and optional Gemini narrative generation.
 - Optional Twitch and YouTube live alerts.

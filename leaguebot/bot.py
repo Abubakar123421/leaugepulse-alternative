@@ -39,13 +39,17 @@ from .result_ui import (
     OpponentResultDecisionButton,
     restore_pending_result_reviews,
 )
-from .season_lifecycle import season_close_preview, season_force_delete_preview
+from .season_lifecycle import (
+    season_close_preview, season_force_delete_preview, season_test_reset_preview,
+)
 from .season_ui import (
     SeasonCleanupRetryView,
     SeasonCloseConfirmationView,
     SeasonForceDeleteConfirmationView,
+    SeasonTestResetConfirmationView,
     season_close_embed,
     season_force_delete_embed,
+    season_test_reset_embed,
 )
 from .schedule_ui import ScheduleDecisionButton
 from .services import ReminderService, StreamService, WeekRolloverService, make_backup
@@ -59,7 +63,8 @@ from .league_import import (
     parse_fixture_import, parse_roster_import, roster_team_summary,
 )
 from .member_import import (
-    ConfirmMemberImportView, parse_member_csv, validate_import_conflicts,
+    MEMBER_CSV_FORMAT, ConfirmMemberImportView, parse_member_csv,
+    validate_import_conflicts,
 )
 from .open_teams_ui import (
     ClaimReviewButton, ClaimTeamCardButton, ViewRosterCardButton,
@@ -895,6 +900,15 @@ def register_commands(bot: LeagueBot) -> None:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
 
+        await db.audit(
+            interaction.guild_id, interaction.user.id,
+            "team_reassigned" if assignment.previous_user_id else "team_assigned",
+            target_type="team", target_id=assignment.team_name,
+            details={
+                "new_user_id": member.id,
+                "previous_user_id": assignment.previous_user_id,
+            },
+        )
         role_errors: list[str] = []
         if assignment.previous_user_id:
             previous_member = interaction.guild.get_member(assignment.previous_user_id)
@@ -909,16 +923,6 @@ def register_commands(bot: LeagueBot) -> None:
         await refresh_open_team_card(
             interaction.client, db, interaction.guild_id,
             assignment.external_team_id or assignment.team_name,
-        )
-        await db.audit(
-            interaction.guild_id, interaction.user.id,
-            "team_reassigned" if assignment.previous_user_id else "team_assigned",
-            target_type="team", target_id=assignment.team_name,
-            details={
-                "new_user_id": member.id,
-                "previous_user_id": assignment.previous_user_id,
-                "role_sync_errors": role_errors,
-            },
         )
         if assignment.previous_user_id:
             summary = (
@@ -951,20 +955,45 @@ def register_commands(bot: LeagueBot) -> None:
         if not await require_commissioner(interaction, settings):
             return
         selected_mode = mode.value if mode else "replace"
+        if not csv_file.filename.casefold().endswith(".csv"):
+            await interaction.response.send_message(
+                "Attach a `.csv` file.\n\n" + MEMBER_CSV_FORMAT, ephemeral=True
+            )
+            return
         if csv_file.size > 2 * 1024 * 1024:
             await interaction.response.send_message("Member CSV files must be 2 MB or smaller.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            data = await csv_file.read()
-        except discord.HTTPException:
-            await interaction.followup.send("Discord could not download that CSV. Try attaching it again.", ephemeral=True)
+            data = await asyncio.wait_for(csv_file.read(), timeout=30)
+        except TimeoutError:
+            await interaction.followup.send(
+                "Discord did not finish downloading the CSV within 30 seconds. "
+                "Attach it again and retry.\n\n" + MEMBER_CSV_FORMAT,
+                ephemeral=True,
+            )
             return
-        valid_teams = await active_team_names(db, interaction.guild_id, settings["season"])
-        preview = parse_member_csv(data, interaction.guild, valid_teams)
-        preview = await validate_import_conflicts(
-            db, interaction.guild_id, settings["season"], preview, selected_mode
-        )
+        except discord.HTTPException:
+            await interaction.followup.send(
+                "Discord could not download that CSV. Try attaching it again.\n\n"
+                + MEMBER_CSV_FORMAT,
+                ephemeral=True,
+            )
+            return
+        try:
+            valid_teams = await active_team_names(db, interaction.guild_id, settings["season"])
+            preview = parse_member_csv(data, interaction.guild, valid_teams)
+            preview = await validate_import_conflicts(
+                db, interaction.guild_id, settings["season"], preview, selected_mode
+            )
+        except Exception:
+            log.exception("Could not preview member import for guild %s", interaction.guild_id)
+            await interaction.followup.send(
+                "I could not validate that CSV. Nothing was imported.\n\n"
+                + MEMBER_CSV_FORMAT,
+                ephemeral=True,
+            )
+            return
         embed = discord.Embed(
             title=f"Member Import Preview — {selected_mode.title()} Mode",
             color=discord.Color.red() if preview.errors else discord.Color.gold(),
@@ -977,6 +1006,9 @@ def register_commands(bot: LeagueBot) -> None:
             embed.add_field(name="Blocking Errors", value="\n".join(preview.errors[:10])[:1024], inline=False)
         if preview.warnings:
             embed.add_field(name="Warnings", value="\n".join(preview.warnings[:8])[:1024], inline=False)
+        embed.add_field(
+            name="Required CSV Format", value=MEMBER_CSV_FORMAT[:1024], inline=False
+        )
         embed.set_footer(text="Nothing changes until Confirm Member Import is pressed.")
         await interaction.followup.send(
             embed=embed,
@@ -1130,17 +1162,17 @@ def register_commands(bot: LeagueBot) -> None:
         except OwnershipError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
+        await db.audit(
+            interaction.guild_id, interaction.user.id,
+            "profile_approved" if approve else "profile_rejected",
+            target_type="user", target_id=str(member.id),
+            details={"team": assignment.team_name},
+        )
         sync_errors: list[str] = []
         if approve:
             sync_errors = await sync_assignment_discord(
                 interaction.client, db, interaction.guild, assignment
             )
-        await db.audit(
-            interaction.guild_id, interaction.user.id,
-            "profile_approved" if approve else "profile_rejected",
-            target_type="user", target_id=str(member.id),
-            details={"role_sync_errors": sync_errors},
-        )
         await refresh_open_team_card(
             interaction.client, db, interaction.guild_id, profile_row["team_name"]
         )
@@ -2127,6 +2159,42 @@ def register_commands(bot: LeagueBot) -> None:
             )
         else:
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @tree.command(
+        name="season-test-reset",
+        description="Reset unfinished active-season test workflow while preserving history.",
+    )
+    @app_commands.describe(
+        confirmation="Type RESET followed by the current season name",
+    )
+    async def season_test_reset(
+        interaction: discord.Interaction, confirmation: str
+    ) -> None:
+        if await deny_dm(interaction):
+            return
+        settings = await db.settings(interaction.guild_id)
+        if not await require_commissioner(interaction, settings):
+            return
+        expected = f"RESET {settings['season']}"
+        if confirmation.strip() != expected:
+            await interaction.response.send_message(
+                f"Confirmation did not match. Type exactly: `{expected}`",
+                ephemeral=True,
+            )
+            return
+        preview = await season_test_reset_preview(
+            db, interaction.guild_id, settings["season"]
+        )
+        await interaction.response.send_message(
+            embed=season_test_reset_embed(preview),
+            view=SeasonTestResetConfirmationView(
+                db,
+                guild_id=interaction.guild_id,
+                season=settings["season"],
+                actor_id=interaction.user.id,
+            ),
+            ephemeral=True,
+        )
 
     @tree.command(
         name="season-force-delete",

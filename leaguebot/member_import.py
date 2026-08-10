@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from dataclasses import dataclass
 
 import discord
@@ -12,6 +13,16 @@ from .helpers import iso_now
 from .ownership import Assignment, canonical_team, sync_assignment_discord
 from .progression import ensure_participant
 from .team_roles import MADDEN_TEAMS, active_team_names, remove_team_role
+
+
+log = logging.getLogger(__name__)
+
+MEMBER_CSV_FORMAT = (
+    "Required headers: `team` and either `discord_id` or `discord_username`. "
+    "Optional headers: `twitch`, `youtube`.\n"
+    "Recommended example:\n"
+    "```csv\nteam,discord_id,twitch,youtube\n49ers,123456789012345678,,\n```"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,8 +72,24 @@ def parse_member_csv(
         return MemberImportPreview((), ("The CSV must use UTF-8 encoding.",), ())
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
-        return MemberImportPreview((), ("The CSV has no header row.",), ())
+        return MemberImportPreview(
+            (), ("The CSV has no header row. " + MEMBER_CSV_FORMAT,), ()
+        )
     reader.fieldnames = [str(name).strip().casefold() for name in reader.fieldnames]
+    headers = set(reader.fieldnames)
+    if not headers.intersection(ALIASES["team"]):
+        errors.append("Missing a team header (`team`, `team_name`, or `franchise`).")
+    if not (
+        headers.intersection(ALIASES["discord_id"])
+        or headers.intersection(ALIASES["discord_username"])
+    ):
+        errors.append(
+            "Missing a member header (`discord_id` is recommended; "
+            "`discord_username` is also supported)."
+        )
+    if errors:
+        errors.append(MEMBER_CSV_FORMAT)
+        return MemberImportPreview((), tuple(errors), ())
     seen_users: dict[int, int] = {}
     seen_teams: dict[str, int] = {}
     for line, raw in enumerate(reader, start=2):
@@ -277,17 +304,33 @@ class ConfirmMemberImportView(discord.ui.View):
             await interaction.response.send_message("Only a Commissioner can confirm this import.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
-        fresh = await validate_import_conflicts(
-            self.db, interaction.guild_id, settings["season"],
-            MemberImportPreview(self.rows, (), ()), self.mode,
-        )
-        if fresh.errors:
+        try:
+            fresh = await validate_import_conflicts(
+                self.db, interaction.guild_id, settings["season"],
+                MemberImportPreview(self.rows, (), ()), self.mode,
+            )
+            if fresh.errors:
+                await interaction.edit_original_response(
+                    content="The import changed and is no longer safe:\n" + "\n".join(fresh.errors[:10]), view=None
+                )
+                return
+            released = await apply_member_import(
+                self.db, interaction.guild_id, settings["season"], self.rows, self.mode
+            )
+        except Exception:
+            log.exception("Member import failed for guild %s", interaction.guild_id)
             await interaction.edit_original_response(
-                content="The import changed and is no longer safe:\n" + "\n".join(fresh.errors[:10]), view=None
+                content=(
+                    "The member import failed before completion. No partial CSV assignment "
+                    "changes were saved. Check the file format and try again.\n\n"
+                    + MEMBER_CSV_FORMAT
+                ),
+                view=None,
             )
             return
-        released = await apply_member_import(
-            self.db, interaction.guild_id, settings["season"], self.rows, self.mode
+        await self.db.audit(
+            interaction.guild_id, interaction.user.id, "members_imported",
+            details={"mode": self.mode, "assignments": len(self.rows), "released": len(released)},
         )
         errors: list[str] = []
         for user_id, team in released:
@@ -295,19 +338,35 @@ class ConfirmMemberImportView(discord.ui.View):
             if member:
                 try:
                     await remove_team_role(self.db, member, team)
-                except (discord.Forbidden, discord.HTTPException) as exc:
+                except Exception as exc:
+                    log.exception(
+                        "Could not remove imported team role for guild %s user %s",
+                        interaction.guild_id,
+                        user_id,
+                    )
                     errors.append(f"release {user_id}/{team}: {exc}")
         for row in self.rows:
-            errors.extend(await sync_assignment_discord(
-                interaction.client, self.db, interaction.guild,
-                Assignment(row.user_id, row.team_name, row.twitch, row.youtube, "csv"),
-            ))
+            try:
+                errors.extend(await sync_assignment_discord(
+                    interaction.client, self.db, interaction.guild,
+                    Assignment(row.user_id, row.team_name, row.twitch, row.youtube, "csv"),
+                ))
+            except Exception as exc:
+                log.exception(
+                    "Could not sync imported assignment for guild %s user %s",
+                    interaction.guild_id,
+                    row.user_id,
+                )
+                errors.append(f"assignment {row.user_id}/{row.team_name}: {exc}")
         from .open_teams_ui import refresh_open_teams_panel
-        await refresh_open_teams_panel(interaction.client, self.db, interaction.guild_id)
-        await self.db.audit(
-            interaction.guild_id, interaction.user.id, "members_imported",
-            details={"mode": self.mode, "assignments": len(self.rows), "released": len(released), "sync_errors": errors},
-        )
+        try:
+            await refresh_open_teams_panel(interaction.client, self.db, interaction.guild_id)
+        except Exception as exc:
+            log.exception(
+                "Could not refresh Open Teams after member import for guild %s",
+                interaction.guild_id,
+            )
+            errors.append(f"Open Teams refresh: {exc}")
         button.disabled = True
         await interaction.edit_original_response(view=self)
         message = f"Imported **{len(self.rows)}** assignments in **{self.mode}** mode; released **{len(released)}** owner(s)."
