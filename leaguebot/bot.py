@@ -62,11 +62,12 @@ from .member_import import (
     ConfirmMemberImportView, parse_member_csv, validate_import_conflicts,
 )
 from .open_teams_ui import (
-    ViewRosterCardButton, post_open_teams_panel, refresh_open_team_card, refresh_open_teams_panel,
+    ClaimReviewButton, ClaimTeamCardButton, ViewRosterCardButton,
+    post_open_teams_panel, refresh_open_team_card, refresh_open_teams_panel,
 )
 from .ownership import (
-    OwnershipError, claim_team, initialize_open_teams, sync_all_member_roles,
-    sync_assignment_discord,
+    OwnershipError, assign_team_directly, claim_team, decide_team_claim,
+    initialize_open_teams, sync_all_member_roles, sync_assignment_discord,
 )
 
 log = logging.getLogger(__name__)
@@ -145,6 +146,8 @@ class LeagueBot(discord.Client):
         await self.ai.start()
         register_commands(self)
         self.add_dynamic_items(ViewRosterCardButton)
+        self.add_dynamic_items(ClaimTeamCardButton)
+        self.add_dynamic_items(ClaimReviewButton)
         self.add_dynamic_items(ScheduleDecisionButton)
         self.add_dynamic_items(OpponentResultDecisionButton)
         self.add_dynamic_items(MatchupDisputeButton)
@@ -808,6 +811,20 @@ def register_commands(bot: LeagueBot) -> None:
         teams = [row["team_name"] for row in open_rows if not query or query in normalize_team_name(row["team_name"])]
         return [app_commands.Choice(name=team, value=team) for team in sorted(teams)[:25]]
 
+    async def league_team_autocomplete(
+        interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        if not interaction.guild_id:
+            return []
+        settings = await db.settings(interaction.guild_id)
+        query = normalize_team_name(current)
+        teams = await active_team_names(db, interaction.guild_id, settings["season"])
+        return [
+            app_commands.Choice(name=team, value=team)
+            for team in sorted(teams)
+            if not query or query in normalize_team_name(team)
+        ][:25]
+
     @tree.command(name="registerteam", description="Instantly claim an available Madden team.")
     @app_commands.autocomplete(team=open_team_autocomplete)
     async def register_team(interaction: discord.Interaction, team: str) -> None:
@@ -850,6 +867,73 @@ def register_commands(bot: LeagueBot) -> None:
         if errors:
             message += "\nSome Discord updates need `/syncmemberroles`."
         await interaction.edit_original_response(content=message)
+
+    @tree.command(
+        name="assign-team",
+        description="Assign a member to a team, optionally replacing its current owner.",
+    )
+    @app_commands.autocomplete(team=league_team_autocomplete)
+    async def assign_team_command(
+        interaction: discord.Interaction,
+        member: discord.Member,
+        team: str,
+        replace_existing: bool = False,
+    ) -> None:
+        if await deny_dm(interaction):
+            return
+        settings = await db.settings(interaction.guild_id)
+        if not await require_commissioner(interaction, settings):
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            assignment = await assign_team_directly(
+                db, interaction.guild_id, settings["season"], member.id, team,
+                assigned_by=interaction.user.id,
+                replace_existing=replace_existing,
+            )
+        except OwnershipError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        role_errors: list[str] = []
+        if assignment.previous_user_id:
+            previous_member = interaction.guild.get_member(assignment.previous_user_id)
+            if previous_member:
+                try:
+                    await remove_team_role(db, previous_member, assignment.team_name)
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    role_errors.append(f"previous owner role: {exc}")
+        role_errors.extend(await sync_assignment_discord(
+            interaction.client, db, interaction.guild, assignment
+        ))
+        await refresh_open_team_card(
+            interaction.client, db, interaction.guild_id,
+            assignment.external_team_id or assignment.team_name,
+        )
+        await db.audit(
+            interaction.guild_id, interaction.user.id,
+            "team_reassigned" if assignment.previous_user_id else "team_assigned",
+            target_type="team", target_id=assignment.team_name,
+            details={
+                "new_user_id": member.id,
+                "previous_user_id": assignment.previous_user_id,
+                "role_sync_errors": role_errors,
+            },
+        )
+        if assignment.previous_user_id:
+            summary = (
+                f"**{assignment.team_name}** was reassigned from "
+                f"<@{assignment.previous_user_id}> to {member.mention}. Completed games and "
+                "season history were preserved; unfinished matchup assignments were updated."
+            )
+        else:
+            summary = (
+                f"{member.mention} now owns **{assignment.team_name}**. Their team role and "
+                "unfinished matchup assignments were updated."
+            )
+        if role_errors:
+            summary += "\nSome Discord role/channel updates need manual review or `/syncmemberroles`."
+        await interaction.followup.send(summary, ephemeral=True)
 
     @tree.command(name="importmembers", description="Preview a season member-to-team CSV import.")
     @app_commands.choices(mode=[
@@ -1038,96 +1122,24 @@ def register_commands(bot: LeagueBot) -> None:
                     ephemeral=True,
                 )
                 return
-        async with db.connect() as conn:
-            await conn.execute("BEGIN IMMEDIATE")
-            if approve:
-                cursor = await conn.execute(
-                    """SELECT user_id FROM profiles
-                       WHERE guild_id=? AND approved=1
-                       AND lower(team_name)=lower(?) AND user_id != ?""",
-                    (interaction.guild_id, profile_row["team_name"], member.id),
-                )
-                if await cursor.fetchone():
-                    await conn.rollback()
-                    await interaction.followup.send(
-                        "That team is already assigned to another approved member.",
-                        ephemeral=True,
-                    )
-                    return
-            await conn.execute(
-                """UPDATE profiles SET approved=?,approved_by=?,assignment_source='commissioner',
-                   assigned_at=CASE WHEN ?=1 THEN ? ELSE assigned_at END,updated_at=?
-                   WHERE id=?""",
-                (
-                    int(approve), interaction.user.id, int(approve), iso_now(),
-                    iso_now(), profile_row["id"]
-                ),
+        try:
+            assignment = await decide_team_claim(
+                db, interaction.guild_id, settings["season"], member.id,
+                approved=approve, decided_by=interaction.user.id,
             )
-            await conn.commit()
+        except OwnershipError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        sync_errors: list[str] = []
         if approve:
-            await db.execute(
-                "DELETE FROM open_rosters WHERE guild_id=? AND season=? AND lower(team_name)=lower(?)",
-                (interaction.guild_id, settings["season"], profile_row["team_name"]),
+            sync_errors = await sync_assignment_discord(
+                interaction.client, db, interaction.guild, assignment
             )
-            await db.execute(
-                """UPDATE matchups SET away_user_id=?, updated_at=?
-                   WHERE guild_id=? AND season=? AND lower(away_team)=lower(?)
-                   AND status NOT IN ('complete','force_home','force_away','fair_sim')""",
-                (
-                    member.id, iso_now(), interaction.guild_id, settings["season"],
-                    profile_row["team_name"],
-                ),
-            )
-            await db.execute(
-                """UPDATE matchups SET home_user_id=?, updated_at=?
-                   WHERE guild_id=? AND season=? AND lower(home_team)=lower(?)
-                   AND status NOT IN ('complete','force_home','force_away','fair_sim')""",
-                (
-                    member.id, iso_now(), interaction.guild_id, settings["season"],
-                    profile_row["team_name"],
-                ),
-            )
-            affected = await db.fetchall(
-                """SELECT id FROM matchups WHERE guild_id=? AND season=?
-                   AND (lower(away_team)=lower(?) OR lower(home_team)=lower(?))
-                   AND status NOT IN ('complete','force_home','force_away','fair_sim')""",
-                (
-                    interaction.guild_id, settings["season"],
-                    profile_row["team_name"], profile_row["team_name"],
-                ),
-            )
-            for affected_matchup in affected:
-                await refresh_matchup_message(
-                    interaction.client, db, affected_matchup["id"]
-                )
-            async with db.connect() as conn:
-                await ensure_participant(
-                    conn,
-                    guild_id=interaction.guild_id,
-                    season=settings["season"],
-                    user_id=member.id,
-                    team_name=profile_row["team_name"],
-                )
-                await conn.commit()
-        else:
-            await db.execute(
-                """UPDATE matchups SET away_user_id=NULL, updated_at=?
-                   WHERE guild_id=? AND season=? AND away_user_id=?""",
-                (iso_now(), interaction.guild_id, settings["season"], member.id),
-            )
-            await db.execute(
-                """UPDATE matchups SET home_user_id=NULL, updated_at=?
-                   WHERE guild_id=? AND season=? AND home_user_id=?""",
-                (iso_now(), interaction.guild_id, settings["season"], member.id),
-            )
-            try:
-                await remove_team_role(db, member, profile_row["team_name"])
-            except (discord.Forbidden, discord.HTTPException):
-                pass
         await db.audit(
             interaction.guild_id, interaction.user.id,
             "profile_approved" if approve else "profile_rejected",
             target_type="user", target_id=str(member.id),
+            details={"role_sync_errors": sync_errors},
         )
         await refresh_open_team_card(
             interaction.client, db, interaction.guild_id, profile_row["team_name"]

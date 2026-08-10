@@ -9,7 +9,7 @@ The bot uses prepared CSV snapshots; it does not connect directly to NeonSportz.
 1. `/setup` saves the league name, game, season, timezone, Commissioner role, and creates/reuses team roles. It does **not** create permanent channels or permanent categories.
 2. Commissioners map existing server channels with the destination commands. `/destinations` shows the saved routing.
 3. `/importrosters` imports `output/neonsportz-derived/madden_team_rosters.csv` (32 franchises, 2,074 players).
-4. `/setopenteamlist` posts one roster card per franchise with a private paginated **View Team** control. Members claim teams only through `/registerteam`; commissioners can bulk-assign owners with `/importmembers`.
+4. `/setopenteamlist` posts one roster card per franchise with private paginated **View Team** and **Claim Team** controls. Claims remain pending until a commissioner uses the persistent Approve/Deny review buttons. Commissioners can directly assign or replace one owner with `/assign-team`, or bulk-assign owners with `/importmembers`.
 5. `/importfixtures` imports `output/neonsportz-derived/madden_18_week_fixtures.csv` (272 fixtures, Weeks 1–18). Team ownership lasts for the full season.
 6. The active week gets a top-level `WEEK X MATCHUPS` category and one channel per fixture. Rollover creates the next week first, then deletes the previous week’s channels/category. Results and history remain in SQLite.
 
@@ -32,7 +32,7 @@ Weekly matchup categories are automatic and are not mapped to a permanent catego
 
 ## Other major features
 
-- Atomic `/importmembers` CSV onboarding plus `/syncmemberroles` repair.
+- Atomic `/importmembers` CSV onboarding, direct `/assign-team` assignment/reassignment, plus `/syncmemberroles` repair.
 - Runtime custom-team-emoji resolution by emoji name via `/syncteamemojis` and `/setteamemoji`; Discord emoji IDs are never hardcoded.
 - Commissioner dashboards, force wins, fair simulations, result evidence/review, team release, and restart-safe reminders.
 - Career profiles, XP, leaderboard, season history, archival, and retryable season cleanup.

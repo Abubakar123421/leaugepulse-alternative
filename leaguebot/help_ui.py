@@ -11,7 +11,7 @@ CATEGORIES = {
     },
     "Career and History": {"profile", "leaderboard", "season-history"},
     "Commissioner Commands": {
-        "setup", "settings", "profile-approve", "team-release",
+        "setup", "settings", "profile-approve", "assign-team", "team-release",
         "importrosters", "importfixtures", "importmembers", "import-schedule", "week", "season-close", "season-force-delete",
         "season-cleanup", "announce", "award", "seasonaward", "seasonawards", "gameoftheweek", "weekmvp", "syncteamemojis", "setteamemoji", "backup", "createweek",
         "destinations", "setannouncementchannel",
@@ -71,4 +71,3 @@ class HelpView(discord.ui.View):
     async def next(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         self.index = (self.index + 1) % len(self.categories)
         await interaction.response.edit_message(embed=self.embed(), view=self)
-

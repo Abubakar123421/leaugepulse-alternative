@@ -5,11 +5,18 @@ import re
 
 import discord
 
+from .checks import is_commissioner
 from .db import Database
 from .helpers import iso_now
-from .ownership import initialize_open_teams
+from .ownership import (
+    OwnershipError,
+    decide_team_claim,
+    initialize_open_teams,
+    request_team_claim,
+    sync_assignment_discord,
+)
 from .registration import normalize_team_name
-from .team_roles import active_franchises, active_team_names
+from .team_roles import active_franchises, assign_team_role
 from .team_emojis import team_emoji
 
 
@@ -29,8 +36,8 @@ async def open_teams_embed(db: Database, guild_id: int, season: str) -> discord.
         title="\N{AMERICAN FOOTBALL} Open Teams",
         description=(
             "Every franchise has an individual roster card below. Use **View Team** "
-            "to inspect every imported player privately. To claim an available "
-            "franchise for the season, use `/registerteam`."
+            "to inspect every imported player privately, or **Claim Team** to request "
+            "an available franchise. A commissioner must approve each request."
         ),
         color=discord.Color.green(),
     )
@@ -252,10 +259,224 @@ class ViewRosterCardButton(
             view=view,
         )
 
+
+class ClaimTeamCardButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"leaguebot:team-card:claim:(?P<guild_id>\d+):(?P<team_id>[^:]+)",
+):
+    def __init__(self, guild_id: int, team_id: str):
+        self.guild_id = guild_id
+        self.team_id = team_id
+        super().__init__(discord.ui.Button(
+            label="Claim Team",
+            emoji="\N{RAISED HAND}",
+            style=discord.ButtonStyle.success,
+            custom_id=f"leaguebot:team-card:claim:{guild_id}:{team_id}",
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match: re.Match[str], /):
+        return cls(int(match["guild_id"]), match["team_id"])
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id != self.guild_id or not interaction.guild:
+            await interaction.response.send_message(
+                "This team card belongs to another server.", ephemeral=True
+            )
+            return
+        db: Database = interaction.client.db
+        settings = await db.settings(self.guild_id)
+        audit_channel = interaction.guild.get_channel(settings.get("audit_channel_id") or 0)
+        if not isinstance(audit_channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "Team claims are paused until a commissioner configures the audit channel.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        franchise = await db.fetchone(
+            """SELECT team_name FROM franchises WHERE guild_id=? AND season=?
+               AND external_team_id=?""",
+            (self.guild_id, settings["season"], self.team_id),
+        )
+        if not franchise:
+            await interaction.followup.send("That team is no longer available.", ephemeral=True)
+            return
+        try:
+            assignment = await request_team_claim(
+                db, self.guild_id, settings["season"], interaction.user.id,
+                franchise["team_name"],
+            )
+        except OwnershipError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        await refresh_open_team_card(
+            interaction.client, db, self.guild_id,
+            assignment.external_team_id or assignment.team_name,
+        )
+        commissioner_mention = (
+            f"<@&{settings['commissioner_role_id']}>"
+            if settings.get("commissioner_role_id") else "Commissioners"
+        )
+        embed = discord.Embed(
+            title="Pending Team Claim",
+            description=(
+                f"**Member:** {interaction.user.mention}\n"
+                f"**Team:** {assignment.team_name}\n\n"
+                "Approve or deny this request below."
+            ),
+            color=discord.Color.gold(),
+        )
+        try:
+            await audit_channel.send(
+                commissioner_mention,
+                embed=embed,
+                view=ClaimReviewView(self.guild_id, interaction.user.id),
+                allowed_mentions=discord.AllowedMentions(
+                    roles=True, users=False, everyone=False
+                ),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            await decide_team_claim(
+                db, self.guild_id, settings["season"], interaction.user.id,
+                approved=False, decided_by=interaction.client.user.id,
+            )
+            await refresh_open_team_card(
+                interaction.client, db, self.guild_id,
+                assignment.external_team_id or assignment.team_name,
+            )
+            await interaction.followup.send(
+                "I could not post the commissioner review card, so the claim was cancelled.",
+                ephemeral=True,
+            )
+            return
+        await db.audit(
+            self.guild_id, interaction.user.id, "team_claim_requested",
+            target_type="team", target_id=assignment.team_name,
+        )
+        await interaction.followup.send(
+            f"Your request for **{assignment.team_name}** is pending commissioner approval.",
+            ephemeral=True,
+        )
+
+
+class ClaimReviewButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"leaguebot:claim-review:(?P<guild_id>\d+):(?P<user_id>\d+):(?P<action>approve|deny)",
+):
+    def __init__(self, guild_id: int, user_id: int, action: str):
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.action = action
+        approved = action == "approve"
+        super().__init__(discord.ui.Button(
+            label="Approve" if approved else "Deny",
+            style=discord.ButtonStyle.success if approved else discord.ButtonStyle.danger,
+            custom_id=f"leaguebot:claim-review:{guild_id}:{user_id}:{action}",
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match: re.Match[str], /):
+        return cls(int(match["guild_id"]), int(match["user_id"]), match["action"])
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.guild_id != self.guild_id or not interaction.guild:
+            await interaction.response.send_message(
+                "This review belongs to another server.", ephemeral=True
+            )
+            return
+        db: Database = interaction.client.db
+        settings = await db.settings(self.guild_id)
+        if not await is_commissioner(interaction, settings):
+            await interaction.response.send_message(
+                "Only commissioners can decide team claims.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        approved = self.action == "approve"
+        member = interaction.guild.get_member(self.user_id)
+        pending = await db.fetchone(
+            "SELECT * FROM profiles WHERE guild_id=? AND user_id=? AND approved=0",
+            (self.guild_id, self.user_id),
+        )
+        if not pending:
+            await interaction.followup.send("This claim is no longer pending.", ephemeral=True)
+            return
+        if approved:
+            if not member:
+                await interaction.followup.send(
+                    "That member is no longer in this server. Deny the claim to reopen the team.",
+                    ephemeral=True,
+                )
+                return
+            try:
+                await assign_team_role(db, member, pending["team_name"])
+            except (ValueError, discord.Forbidden, discord.HTTPException) as exc:
+                await interaction.followup.send(
+                    f"The claim was not approved because the team role could not be assigned: {exc}",
+                    ephemeral=True,
+                )
+                return
+        try:
+            assignment = await decide_team_claim(
+                db, self.guild_id, settings["season"], self.user_id,
+                approved=approved, decided_by=interaction.user.id,
+            )
+        except OwnershipError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+        errors: list[str] = []
+        if approved:
+            errors = await sync_assignment_discord(
+                interaction.client, db, interaction.guild, assignment
+            )
+        await refresh_open_team_card(
+            interaction.client, db, self.guild_id,
+            assignment.external_team_id or assignment.team_name,
+        )
+        action_word = "approved" if approved else "denied"
+        await db.audit(
+            self.guild_id, interaction.user.id, f"team_claim_{action_word}",
+            target_type="user", target_id=str(self.user_id),
+            details={"team": assignment.team_name, "role_sync_errors": errors},
+        )
+        resolved_embed = discord.Embed(
+            title=f"Team Claim {action_word.title()}",
+            description=(
+                f"**Member:** <@{self.user_id}>\n**Team:** {assignment.team_name}\n"
+                f"**Decided by:** {interaction.user.mention}"
+            ),
+            color=discord.Color.green() if approved else discord.Color.red(),
+        )
+        try:
+            await interaction.message.edit(embed=resolved_embed, view=None)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+        if member:
+            try:
+                await member.send(
+                    f"Your request for **{assignment.team_name}** was {action_word}."
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+        suffix = " Some Discord updates need `/syncmemberroles`." if errors else ""
+        await interaction.followup.send(
+            f"The claim was {action_word}.{suffix}", ephemeral=True
+        )
+
+
+class ClaimReviewView(discord.ui.View):
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(timeout=None)
+        self.add_item(ClaimReviewButton(guild_id, user_id, "approve"))
+        self.add_item(ClaimReviewButton(guild_id, user_id, "deny"))
+
 class TeamCardView(discord.ui.View):
     def __init__(self, guild_id: int, team_id: str, *, is_open: bool):
         super().__init__(timeout=None)
         self.add_item(ViewRosterCardButton(guild_id, team_id))
+        if is_open:
+            self.add_item(ClaimTeamCardButton(guild_id, team_id))
 
 
 async def post_open_teams_panel(
