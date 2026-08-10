@@ -151,26 +151,6 @@ class MatchupDisputeView(discord.ui.View):
         self.add_item(MatchupDisputeButton(matchup_id))
 
 async def matchup_channel_embed(db: Database, matchup, settings: dict, guild: discord.Guild | None = None) -> discord.Embed:
-    away_team = await db.fetchone(
-        "SELECT wins,losses,ties,logo_url FROM teams WHERE guild_id=? AND season=? AND lower(name)=lower(?)",
-        (matchup["guild_id"], matchup["season"], matchup["away_team"]),
-    )
-    home_team = await db.fetchone(
-        "SELECT wins,losses,ties,logo_url FROM teams WHERE guild_id=? AND season=? AND lower(name)=lower(?)",
-        (matchup["guild_id"], matchup["season"], matchup["home_team"]),
-    )
-    away_role = await db.fetchone(
-        "SELECT role_id FROM team_roles WHERE guild_id=? AND lower(team_name)=lower(?)",
-        (matchup["guild_id"], matchup["away_team"]),
-    )
-    home_role = await db.fetchone(
-        "SELECT role_id FROM team_roles WHERE guild_id=? AND lower(team_name)=lower(?)",
-        (matchup["guild_id"], matchup["home_team"]),
-    )
-    owners = (
-        f"<@{matchup['away_user_id']}>" if matchup["away_user_id"] else "Unassigned",
-        f"<@{matchup['home_user_id']}>" if matchup["home_user_id"] else "Unassigned",
-    )
     away_display = (
         await team_label(db, guild, matchup["season"], matchup["away_team"], bold=True)
         if guild else f"**{matchup['away_team']}**"
@@ -179,72 +159,40 @@ async def matchup_channel_embed(db: Database, matchup, settings: dict, guild: di
         await team_label(db, guild, matchup["season"], matchup["home_team"], bold=True)
         if guild else f"**{matchup['home_team']}**"
     )
+    away_owner = (
+        f"<@{matchup['away_user_id']}>" if matchup["away_user_id"] else "Unassigned"
+    )
+    home_owner = (
+        f"<@{matchup['home_user_id']}>" if matchup["home_user_id"] else "Unassigned"
+    )
+    pending_review = matchup["status"] in ("result_pending", "issue_reported")
     embed = discord.Embed(
-        title=f"🏈 {matchup['away_team']} @ {matchup['home_team']} — Week {matchup['week']}",
-        description=(
-            f"{away_display} ({owners[0]}) "
-            f"{f'<@&{away_role['role_id']}>' if away_role else ''} at "
-            f"{home_display} ({owners[1]}) "
-            f"{f'<@&{home_role['role_id']}>' if home_role else ''}\n\n"
-            "Please schedule and play your game before the advance deadline."
-        ),
-        color=discord.Color.blurple(),
-    )
-    def record(team) -> str:
-        return f"{team['wins']}-{team['losses']}-{team['ties']}" if team else "0-0-0"
-
-    embed.add_field(
-        name="Team Records",
-        value=f"{away_display}: **{record(away_team)}**\n{home_display}: **{record(home_team)}**",
-        inline=False,
+        title=f"Week {matchup['week']} Matchup",
+        description=f"{away_display}\n**at**\n{home_display}",
+        color=discord.Color.gold() if pending_review else discord.Color.blurple(),
     )
     embed.add_field(
-        name="Status",
-        value=status_label(matchup["status"], matchup["deadline_at"]),
-        inline=False,
+        name=f"Away · {matchup['away_team']}", value=away_owner, inline=True
     )
-    if matchup["scheduled_at"]:
-        scheduled = datetime.fromisoformat(matchup["scheduled_at"])
+    embed.add_field(
+        name=f"Home · {matchup['home_team']}", value=home_owner, inline=True
+    )
+    if pending_review and matchup["away_score"] is not None:
         embed.add_field(
-            name="📅 Confirmed Game Time",
-            value=f"<t:{int(scheduled.timestamp())}:F>\n{settings['timezone']}",
+            name="Score Submitted",
+            value=(
+                f"**{matchup['away_team']} {matchup['away_score']} - "
+                f"{matchup['home_score']} {matchup['home_team']}**\n"
+                "Awaiting commissioner review"
+            ),
             inline=False,
         )
-    elif matchup["proposed_at"]:
-        proposed = datetime.fromisoformat(matchup["proposed_at"])
-        embed.add_field(
-            name="Pending Proposal",
-            value=f"<t:{int(proposed.timestamp())}:F> · waiting for opponent confirmation",
-            inline=False,
-        )
-    if matchup["away_score"] is not None:
-        embed.add_field(
-            name="Submitted Result",
-            value=f"{away_display} **{matchup['away_score']}–{matchup['home_score']}** {home_display}",
-            inline=False,
-        )
-    deadline = datetime.fromisoformat(matchup["deadline_at"]) if matchup["deadline_at"] else None
-    embed.add_field(
-        name="Advance Deadline",
-        value=f"<t:{int(deadline.timestamp())}:F>" if deadline else "Not configured",
-        inline=False,
-    )
-    embed.add_field(
-        name="Reactions",
-        value=(
-            "📅 — Schedule game\n"
-            "🔁 — Counter proposed time\n"
-            "✅ — Accept or confirm\n"
-            "🏁 — Submit result\n"
-            "🏠 — Request home-team force win\n"
-            "✈️ — Request away-team force win\n"
-            "🤝 — Request fair simulation\n"
-            "🆘 — Request Commissioner help"
-        ),
-        inline=False,
-    )
     embed.set_footer(
-        text="Owners can use Report Dispute below to contact commissioners privately."
+        text=(
+            "Score submitted — commissioners are reviewing it."
+            if pending_review
+            else "Use this channel to coordinate. Submit the score when the game is finished."
+        )
     )
     return embed
 
@@ -329,6 +277,8 @@ async def create_week_matchup_channels(
 async def ensure_matchup_message(
     channel: discord.TextChannel, db: Database, matchup, settings: dict
 ) -> discord.Message:
+    from .result_ui import MatchupScoreSubmissionView
+
     message = None
     if matchup["message_id"]:
         try:
@@ -336,20 +286,20 @@ async def ensure_matchup_message(
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
     embed = await matchup_channel_embed(db, matchup, settings, channel.guild)
+    score_pending = matchup["status"] in ("result_pending", "issue_reported")
+    view = MatchupScoreSubmissionView(matchup["id"], disabled=score_pending)
     if message:
-        await message.edit(embed=embed, view=MatchupDisputeView(matchup["id"]))
+        await message.edit(embed=embed, view=view)
     else:
         mentions = " ".join(
             f"<@{uid}>" for uid in (matchup["away_user_id"], matchup["home_user_id"]) if uid
         )
         message = await channel.send(
-            f"{mentions} Please schedule this matchup as soon as possible.",
+            mentions,
             embed=embed,
-            view=MatchupDisputeView(matchup["id"]),
+            view=view,
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )
-        for emoji in REACTIONS:
-            await message.add_reaction(emoji)
         await db.execute(
             "UPDATE matchups SET message_id=?,channel_id=?,updated_at=? WHERE id=?",
             (message.id, channel.id, iso_now(), matchup["id"]),
@@ -615,6 +565,11 @@ async def lock_matchup_channel(
                     add_reactions=False,
                     read_message_history=True,
                 )
+        if not channel.name.startswith("final-"):
+            await channel.edit(
+                name=f"final-{channel.name}"[:100],
+                reason="Commissioner approved the final result",
+            )
         return True
     except (discord.Forbidden, discord.HTTPException):
         return False

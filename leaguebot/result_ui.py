@@ -15,29 +15,31 @@ MAX_EVIDENCE_BYTES = 8 * 1024 * 1024
 
 
 class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
-    away_score = discord.ui.TextInput(label="Away score", max_length=3)
-    home_score = discord.ui.TextInput(label="Home score", max_length=3)
-
-    def __init__(self, db: Database, matchup_id: int):
+    def __init__(self, db: Database, matchup):
         super().__init__(
             timeout=600,
-            custom_id=f"leaguebot:result:submit:{matchup_id}",
+            custom_id=f"leaguebot:result:submit:{matchup['id']}",
         )
         self.db = db
-        self.matchup_id = matchup_id
-        self.evidence = discord.ui.FileUpload(
-            custom_id="leaguebot:result:evidence",
-            required=True,
-            min_values=1,
-            max_values=1,
+        self.matchup_id = matchup["id"]
+        self.away_score = discord.ui.TextInput(
+            custom_id="leaguebot:result:away-score",
+            placeholder="Enter the final score",
+            min_length=1,
+            max_length=3,
         )
-        self.add_item(
-            discord.ui.Label(
-                text="Final-score screenshot",
-                description="Upload one PNG, JPG, or WebP image (maximum 8 MB).",
-                component=self.evidence,
-            )
+        self.home_score = discord.ui.TextInput(
+            custom_id="leaguebot:result:home-score",
+            placeholder="Enter the final score",
+            min_length=1,
+            max_length=3,
         )
+        self.add_item(discord.ui.Label(
+            text=f"{matchup['away_team']} score"[:45], component=self.away_score
+        ))
+        self.add_item(discord.ui.Label(
+            text=f"{matchup['home_team']} score"[:45], component=self.home_score
+        ))
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
@@ -49,18 +51,6 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
             await interaction.response.send_message(
                 "Enter non-negative whole-number scores; league games cannot end tied.",
                 ephemeral=True,
-            )
-            return
-
-        attachment = self.evidence.values[0]
-        if attachment.content_type not in ALLOWED_EVIDENCE_TYPES:
-            await interaction.response.send_message(
-                "Upload a PNG, JPG, or WebP screenshot.", ephemeral=True
-            )
-            return
-        if attachment.size > MAX_EVIDENCE_BYTES:
-            await interaction.response.send_message(
-                "That screenshot is larger than 8 MB.", ephemeral=True
             )
             return
 
@@ -113,17 +103,8 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
             )
             return
         submission_version = version_row[0]
-        opponent_ids = {
-            user_id
-            for user_id in (matchup["away_user_id"], matchup["home_user_id"])
-            if user_id and user_id != interaction.user.id
-        }
-        opponent_status = "pending" if opponent_ids else "unavailable"
-        filename = (
-            f"matchup-{self.matchup_id}-result-v{submission_version}."
-            f"{_extension(attachment)}"
-        )
-        uploaded_file = await attachment.to_file(filename=filename)
+        opponent_status = "not_required"
+        submitted_at = iso_now()
         provisional = dict(matchup)
         provisional.update(
             {
@@ -131,7 +112,7 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
                 "result_submission_version": submission_version,
                 "home_score": home_score,
                 "result_submitted_by": interaction.user.id,
-                "result_submitted_at": iso_now(),
+                "result_submitted_at": submitted_at,
                 "result_opponent_status": opponent_status,
                 "result_opponent_by": None,
                 "result_review_note": None,
@@ -139,25 +120,24 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
             }
         )
         mention = _commissioner_mention(settings)
-        audit_message = await audit_channel.send(
-            mention,
-            embed=_result_embed(provisional, evidence_url=f"attachment://{filename}"),
-            file=uploaded_file,
-            view=CommissionerResultReviewView(self.matchup_id, submission_version),
-            allowed_mentions=discord.AllowedMentions(
-                roles=True, users=False, everyone=False
-            ),
-        )
-        # Discord can return the newly-created message before its attachment
-        # collection is populated. Fetch it once before falling back to the
-        # modal upload URL so the rest of the workflow never gets stranded.
-        evidence_url = await _attachment_url(
-            audit_channel, audit_message, attachment.url
-        )
+        try:
+            audit_message = await audit_channel.send(
+                mention,
+                embed=_result_embed(provisional),
+                view=CommissionerResultReviewView(self.matchup_id, submission_version),
+                allowed_mentions=discord.AllowedMentions(
+                    roles=True, users=False, everyone=False
+                ),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            await interaction.edit_original_response(
+                content="I could not send this result to the commissioner review channel."
+            )
+            return
         async with self.db.connect() as conn:
             cursor = await conn.execute(
                 """UPDATE matchups SET away_score=?,home_score=?,status='result_pending',
-                   result_submitted_by=?,result_submitted_at=?,result_evidence_url=?,
+                   result_submitted_by=?,result_submitted_at=?,result_evidence_url=NULL,
                    result_opponent_status=?,result_opponent_by=NULL,
                    result_audit_message_id=?,result_reviewed_by=NULL,
                    result_reviewed_at=NULL,result_review_note=NULL,updated_at=?
@@ -167,8 +147,7 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
                     away_score,
                     home_score,
                     interaction.user.id,
-                    iso_now(),
-                    evidence_url,
+                    submitted_at,
                     opponent_status,
                     audit_message.id,
                     iso_now(),
@@ -199,7 +178,6 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
                 "away_score": away_score,
                 "result_submission_version": submission_version,
                 "home_score": home_score,
-                "evidence_url": evidence_url,
                 "version": submission_version,
             },
         )
@@ -211,20 +189,67 @@ class ResultSubmissionModal(discord.ui.Modal, title="Submit Final Score"):
             embed=_result_embed(updated),
             view=CommissionerResultReviewView(self.matchup_id, submission_version),
         )
-        notified = await _notify_opponents(
-            interaction.client, updated, opponent_ids, submission_version
-        )
-        notice = (
-            "The opposing owner received a private Confirm / Dispute request."
-            if notified
-            else "No opposing owner could be notified; the Commissioner can still review it."
-        )
+        from .channel_workflow import refresh_matchup_message
+        await refresh_matchup_message(interaction.client, self.db, self.matchup_id)
         await interaction.edit_original_response(
             content=(
-                f"🏁 **{matchup['away_team']} {away_score} - {home_score} "
-                f"{matchup['home_team']}** was submitted privately with evidence. {notice}"
+                f"**{matchup['away_team']} {away_score} - {home_score} "
+                f"{matchup['home_team']}** was sent to the commissioners for review."
             )
         )
+
+
+class MatchupSubmitScoreButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"leaguebot:matchup:submit:(?P<matchup_id>\d+)",
+):
+    def __init__(self, matchup_id: int, *, disabled: bool = False):
+        self.matchup_id = matchup_id
+        super().__init__(discord.ui.Button(
+            label="Game Complete / Submit Score",
+            style=discord.ButtonStyle.success,
+            custom_id=f"leaguebot:matchup:submit:{matchup_id}",
+            disabled=disabled,
+        ))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match: re.Match[str], /):
+        return cls(int(match["matchup_id"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        db: Database = interaction.client.db
+        matchup = await db.fetchone(
+            "SELECT * FROM matchups WHERE id=?", (self.matchup_id,)
+        )
+        if not matchup:
+            await interaction.response.send_message(
+                "This matchup no longer exists.", ephemeral=True
+            )
+            return
+        if interaction.user.id not in (
+            matchup["away_user_id"], matchup["home_user_id"]
+        ):
+            await interaction.response.send_message(
+                "Only the two assigned team owners can submit this score.", ephemeral=True
+            )
+            return
+        if matchup["status"] in FINAL_STATUSES:
+            await interaction.response.send_message(
+                "This matchup is already final.", ephemeral=True
+            )
+            return
+        if matchup["status"] in ("result_pending", "issue_reported"):
+            await interaction.response.send_message(
+                "A score is already waiting for commissioner review.", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(ResultSubmissionModal(db, matchup))
+
+
+class MatchupScoreSubmissionView(discord.ui.View):
+    def __init__(self, matchup_id: int, *, disabled: bool = False):
+        super().__init__(timeout=None)
+        self.add_item(MatchupSubmitScoreButton(matchup_id, disabled=disabled))
 
 
 class OpponentResultDecisionButton(
@@ -381,7 +406,7 @@ class OpponentResultDecisionView(discord.ui.View):
 class CommissionerResultActionButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=(
-        r"leaguebot:result:staff:(?P<action>approve|reject|evidence):"
+        r"leaguebot:result:staff:(?P<action>approve|reject|edit|evidence):"
         r"(?P<matchup_id>\d+)(?::(?P<version>\d+))?"
     ),
 ):
@@ -392,11 +417,13 @@ class CommissionerResultActionButton(
         labels = {
             "approve": "Approve Result",
             "reject": "Reject Result",
+            "edit": "Edit Score",
             "evidence": "Request More Evidence",
         }
         styles = {
             "approve": discord.ButtonStyle.success,
             "reject": discord.ButtonStyle.danger,
+            "edit": discord.ButtonStyle.primary,
             "evidence": discord.ButtonStyle.secondary,
         }
         super().__init__(
@@ -439,10 +466,10 @@ class CommissionerResultActionButton(
                 "This result is no longer awaiting Commissioner review.", ephemeral=True
             )
             return
-        if not matchup["result_submitted_by"] or not matchup["result_evidence_url"]:
+        if not matchup["result_submitted_by"]:
             await interaction.response.send_message(
                 "This is an incomplete submission from an earlier failed attempt. "
-                "Ask a team owner to press **Mark Complete** again.",
+                "Ask a team owner to submit the score again.",
                 ephemeral=True,
             )
             return
@@ -452,17 +479,19 @@ class CommissionerResultActionButton(
                 "Only a Commissioner can review this result.", ephemeral=True
             )
             return
+        if self.action == "edit":
+            await interaction.response.send_modal(
+                CommissionerScoreEditModal(db, matchup, self.version)
+            )
+            return
         if self.action == "evidence":
             await interaction.response.send_modal(
                 MoreEvidenceModal(db, self.matchup_id, self.version)
             )
             return
         warning = None
-        if self.action == "approve":
-            if matchup["result_opponent_status"] == "disputed":
-                warning = "The opposing owner disputed this result. Approval will override that dispute."
-            elif matchup["result_opponent_status"] != "confirmed":
-                warning = "The opposing owner has not confirmed this result. Approval will override confirmation."
+        if self.action == "approve" and matchup["result_opponent_status"] == "disputed":
+            warning = "The opposing owner disputed this result. Approval will override that dispute."
         await interaction.response.send_message(
             content=warning or f"Confirm **{self.action} result** for matchup #{self.matchup_id}.",
             view=CommissionerResultConfirmationView(
@@ -472,12 +501,118 @@ class CommissionerResultActionButton(
         )
 
 
+class CommissionerScoreEditModal(discord.ui.Modal, title="Edit Submitted Score"):
+    def __init__(self, db: Database, matchup, version: int | None):
+        super().__init__(
+            timeout=600,
+            custom_id=f"leaguebot:result:staff-edit:{matchup['id']}:{version or 0}",
+        )
+        self.db = db
+        self.matchup_id = matchup["id"]
+        self.version = version
+        self.away_score = discord.ui.TextInput(
+            custom_id="leaguebot:result:edit-away-score",
+            default=str(matchup["away_score"]),
+            max_length=3,
+        )
+        self.home_score = discord.ui.TextInput(
+            custom_id="leaguebot:result:edit-home-score",
+            default=str(matchup["home_score"]),
+            max_length=3,
+        )
+        self.add_item(discord.ui.Label(
+            text=f"{matchup['away_team']} score"[:45], component=self.away_score
+        ))
+        self.add_item(discord.ui.Label(
+            text=f"{matchup['home_team']} score"[:45], component=self.home_score
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            away_score = int(str(self.away_score))
+            home_score = int(str(self.home_score))
+            if min(away_score, home_score) < 0 or away_score == home_score:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(
+                "Enter non-negative whole-number scores; league games cannot end tied.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        matchup = await self.db.fetchone(
+            "SELECT * FROM matchups WHERE id=?", (self.matchup_id,)
+        )
+        if not matchup or matchup["status"] not in ("result_pending", "issue_reported"):
+            await interaction.edit_original_response(
+                content="This result is no longer awaiting review."
+            )
+            return
+        if self.version is not None and self.version != matchup["result_submission_version"]:
+            await interaction.edit_original_response(
+                content="This edit belongs to an older score submission."
+            )
+            return
+        settings = await self.db.settings(matchup["guild_id"])
+        if not await is_commissioner(interaction, settings):
+            await interaction.edit_original_response(
+                content="Only a Commissioner can edit submitted scores."
+            )
+            return
+        old_scores = (matchup["away_score"], matchup["home_score"])
+        async with self.db.connect() as conn:
+            cursor = await conn.execute(
+                """UPDATE matchups SET away_score=?,home_score=?,result_review_note=?,updated_at=?
+                   WHERE id=? AND result_submission_version=?
+                   AND status IN ('result_pending','issue_reported')""",
+                (
+                    away_score,
+                    home_score,
+                    f"Score edited by Commissioner <@{interaction.user.id}>",
+                    iso_now(),
+                    self.matchup_id,
+                    matchup["result_submission_version"],
+                ),
+            )
+            await conn.commit()
+        if cursor.rowcount != 1:
+            await interaction.edit_original_response(
+                content="The result changed before this edit was saved."
+            )
+            return
+        await self.db.audit(
+            matchup["guild_id"],
+            interaction.user.id,
+            "result_score_edited",
+            target_type="matchup",
+            target_id=str(self.matchup_id),
+            details={
+                "old_away_score": old_scores[0],
+                "old_home_score": old_scores[1],
+                "away_score": away_score,
+                "home_score": home_score,
+            },
+        )
+        updated = await self.db.fetchone(
+            "SELECT * FROM matchups WHERE id=?", (self.matchup_id,)
+        )
+        await _refresh_audit_message(interaction.client, updated)
+        from .channel_workflow import refresh_matchup_message
+        await refresh_matchup_message(interaction.client, self.db, self.matchup_id)
+        await interaction.edit_original_response(
+            content=(
+                f"Score updated to **{updated['away_team']} {away_score} - "
+                f"{home_score} {updated['home_team']}**."
+            )
+        )
+
+
 class CommissionerResultReviewView(discord.ui.View):
     def __init__(self, matchup_id: int, version: int | None = None):
         super().__init__(timeout=None)
         self.add_item(CommissionerResultActionButton("approve", matchup_id, version))
+        self.add_item(CommissionerResultActionButton("edit", matchup_id, version))
         self.add_item(CommissionerResultActionButton("reject", matchup_id, version))
-        self.add_item(CommissionerResultActionButton("evidence", matchup_id, version))
 
 
 class CommissionerResultConfirmationView(discord.ui.View):
@@ -568,6 +703,11 @@ class CommissionerResultConfirmationView(discord.ui.View):
                     ),
                     channel_id=updated["channel_id"], title="\N{NEWSPAPER} Official Game Recap",
                 )
+        else:
+            from .channel_workflow import refresh_matchup_message
+            await refresh_matchup_message(
+                interaction.client, self.db, updated["id"]
+            )
         owners = {
             user_id
             for user_id in (matchup["away_user_id"], matchup["home_user_id"])
@@ -669,14 +809,23 @@ class MoreEvidenceModal(discord.ui.Modal, title="Request More Evidence"):
 
 def _result_embed(matchup, evidence_url: str | None = None) -> discord.Embed:
     status = matchup["result_opponent_status"] or "pending"
+    away_score = matchup["away_score"]
+    home_score = matchup["home_score"]
+    if away_score is not None and home_score is not None:
+        away_won = away_score > home_score
+        winner = matchup["away_team"] if away_won else matchup["home_team"]
+        loser = matchup["home_team"] if away_won else matchup["away_team"]
+    else:
+        winner = loser = "Pending"
     embed = discord.Embed(
-        title="Final Score Submitted",
+        title=f"Result Review · Week {matchup['week']}",
         description=(
-            f"**Matchup:** #{matchup['id']} · {matchup['away_team']} @ {matchup['home_team']}\n"
-            f"**Submitted by:** <@{matchup['result_submitted_by']}>\n"
-            f"**Final score:** {matchup['away_team']} {matchup['away_score']} - "
-            f"{matchup['home_score']} {matchup['home_team']}\n"
-            f"**Opponent status:** {status.replace('_', ' ').title()}"
+            f"**Matchup:** {matchup['away_team']} @ {matchup['home_team']}\n"
+            f"**Final score:** {matchup['away_team']} {away_score} - "
+            f"{home_score} {matchup['home_team']}\n"
+            f"**Winner:** {winner}\n"
+            f"**Loser:** {loser}\n"
+            f"**Submitted by:** <@{matchup['result_submitted_by']}>"
         ),
         color=(
             discord.Color.red()
@@ -695,7 +844,9 @@ def _result_embed(matchup, evidence_url: str | None = None) -> discord.Embed:
     image_url = evidence_url or matchup["result_evidence_url"]
     if image_url:
         embed.set_image(url=image_url)
-    embed.set_footer(text=f"Current matchup status: {matchup['status'].replace('_', ' ').title()}")
+    embed.set_footer(
+        text=f"Review status: {matchup['status'].replace('_', ' ').title()}"
+    )
     return embed
 
 
@@ -736,8 +887,7 @@ async def restore_pending_result_reviews(
     rows = await db.fetchall(
         """SELECT * FROM matchups WHERE guild_id=?
            AND status IN ('result_pending','issue_reported')
-           AND result_audit_message_id IS NOT NULL
-           AND result_evidence_url IS NOT NULL""",
+           AND result_audit_message_id IS NOT NULL""",
         (guild_id,),
     )
     repaired = 0
@@ -992,7 +1142,6 @@ async def _apply_result_decision(
                result_reviewed_at=?, result_review_note=?, updated_at=?
                WHERE id=? AND status IN ('result_pending','issue_reported')
                AND result_submitted_by IS NOT NULL
-               AND result_evidence_url IS NOT NULL
                AND result_submission_version=?""",
             (
                 new_status, actor_id, now, action.title(), now,
@@ -1042,7 +1191,6 @@ async def _publish_final_result(client: discord.Client, matchup) -> bool:
     embed = await _public_final_embed(client.db, matchup, guild)
     matchup_channel = guild.get_channel(matchup["channel_id"] or 0)
     original_updated = False
-    matchup_posted = False
     if isinstance(matchup_channel, discord.TextChannel):
         if matchup["message_id"]:
             try:
@@ -1051,11 +1199,6 @@ async def _publish_final_result(client: discord.Client, matchup) -> bool:
                 original_updated = True
             except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                 pass
-        try:
-            await matchup_channel.send(embed=embed)
-            matchup_posted = True
-        except (discord.Forbidden, discord.HTTPException):
-            pass
 
     score_channel = guild.get_channel(settings.get("final_scores_channel_id") or 0)
     score_posted = False
@@ -1083,7 +1226,7 @@ async def _publish_final_result(client: discord.Client, matchup) -> bool:
                 pass
     from .channel_workflow import lock_matchup_channel
     await lock_matchup_channel(client.db, guild, matchup)
-    return score_posted or (original_updated and matchup_posted)
+    return score_posted or original_updated
 
 
 async def _public_final_embed(db: Database, matchup, guild: discord.Guild | None = None) -> discord.Embed:

@@ -6,7 +6,9 @@ from leaguebot.channel_workflow import MatchupDisputeView
 from leaguebot.db import Database, MATCHUP_RESULT_COLUMNS
 from leaguebot.result_ui import (
     CommissionerResultReviewView,
+    MatchupScoreSubmissionView,
     OpponentResultDecisionView,
+    ResultSubmissionModal,
     _attachment_url,
     _apply_result_decision,
 )
@@ -49,7 +51,7 @@ def test_result_decision_views_are_persistent():
     assert {item.custom_id for item in commissioner.children} == {
         "leaguebot:result:staff:approve:42",
         "leaguebot:result:staff:reject:42",
-        "leaguebot:result:staff:evidence:42",
+        "leaguebot:result:staff:edit:42",
     }
 
 def test_matchup_dispute_control_is_persistent():
@@ -71,8 +73,23 @@ def test_versioned_result_controls_cannot_target_newer_submissions():
     assert {item.custom_id for item in versioned_commissioner.children} == {
         "leaguebot:result:staff:approve:42:3",
         "leaguebot:result:staff:reject:42:3",
-        "leaguebot:result:staff:evidence:42:3",
+        "leaguebot:result:staff:edit:42:3",
     }
+
+
+def test_player_score_submission_is_one_persistent_button_with_team_labels():
+    view = MatchupScoreSubmissionView(42)
+    modal = ResultSubmissionModal(
+        None,
+        {"id": 42, "away_team": "Vikings", "home_team": "49ers"},
+    )
+
+    assert view.timeout is None
+    assert len(view.children) == 1
+    assert view.children[0].custom_id == "leaguebot:matchup:submit:42"
+    assert view.children[0].item.label == "Game Complete / Submit Score"
+    assert modal.children[0].text == "Vikings score"
+    assert modal.children[1].text == "49ers score"
 
 @pytest.mark.asyncio
 async def test_attachment_url_refetches_a_new_audit_message():
@@ -98,10 +115,10 @@ async def test_approval_updates_standings_only_once(tmp_path):
     matchup_id = await db.execute(
         """INSERT INTO matchups
            (guild_id,season,week,external_key,away_team,home_team,
-            away_score,home_score,status,result_submitted_by,result_evidence_url,
+            away_score,home_score,status,result_submitted_by,
             created_at,updated_at)
            VALUES (1,'1',1,'w1-a-b','Away','Home',24,17,'result_pending',10,
-                   'https://cdn.example/proof.png','now','now')"""
+                   'now','now')"""
     )
     matchup = await db.fetchone("SELECT * FROM matchups WHERE id=?", (matchup_id,))
 

@@ -36,6 +36,7 @@ from .roster_ui import TeamReleaseConfirmationView
 from .result_ui import (
     CommissionerResultActionButton,
     CommissionerResultConfirmationView,
+    MatchupSubmitScoreButton,
     OpponentResultDecisionButton,
     restore_pending_result_reviews,
 )
@@ -156,6 +157,7 @@ class LeagueBot(discord.Client):
         self.add_dynamic_items(ScheduleDecisionButton)
         self.add_dynamic_items(OpponentResultDecisionButton)
         self.add_dynamic_items(MatchupDisputeButton)
+        self.add_dynamic_items(MatchupSubmitScoreButton)
         self.add_dynamic_items(CommissionerResultActionButton)
         await self.tree.sync()
         self.reminders.start()
@@ -2198,16 +2200,18 @@ def register_commands(bot: LeagueBot) -> None:
 
     @tree.command(
         name="season-force-delete",
-        description="Permanently discard the active test season and start an empty one.",
+        description="Safely clear active test data and start an empty replacement season.",
     )
     @app_commands.describe(
         new_season="Name for the empty replacement season",
-        confirmation="Type DELETE followed by the current season name",
+        erase_completed_history="Also erase completed active-season history and career progress",
+        confirmation="Use DELETE <season>, or DELETE HISTORY <season> when erasing history",
     )
     async def season_force_delete(
         interaction: discord.Interaction,
         new_season: str,
         confirmation: str,
+        erase_completed_history: bool = False,
     ) -> None:
         if await deny_dm(interaction):
             return
@@ -2215,7 +2219,11 @@ def register_commands(bot: LeagueBot) -> None:
         if not await require_commissioner(interaction, settings):
             return
 
-        expected = f"DELETE {settings['season']}"
+        expected = (
+            f"DELETE HISTORY {settings['season']}"
+            if erase_completed_history
+            else f"DELETE {settings['season']}"
+        )
         if confirmation.strip() != expected:
             await interaction.response.send_message(
                 f"Confirmation did not match. Type exactly: `{expected}`",
@@ -2231,8 +2239,14 @@ def register_commands(bot: LeagueBot) -> None:
         existing_new = await db.fetchone(
             """SELECT 1 FROM season_archives WHERE guild_id=? AND season=?
                UNION SELECT 1 FROM matchups WHERE guild_id=? AND season=?
-               UNION SELECT 1 FROM franchises WHERE guild_id=? AND season=? LIMIT 1""",
+               UNION SELECT 1 FROM franchises WHERE guild_id=? AND season=?
+               UNION SELECT 1 FROM game_history WHERE guild_id=? AND season=?
+               UNION SELECT 1 FROM season_participants WHERE guild_id=? AND season=?
+               UNION SELECT 1 FROM career_events WHERE guild_id=? AND season=? LIMIT 1""",
             (
+                interaction.guild_id, clean_new,
+                interaction.guild_id, clean_new,
+                interaction.guild_id, clean_new,
                 interaction.guild_id, clean_new,
                 interaction.guild_id, clean_new,
                 interaction.guild_id, clean_new,
@@ -2249,13 +2263,18 @@ def register_commands(bot: LeagueBot) -> None:
             db, interaction.guild_id, settings["season"]
         )
         await interaction.response.send_message(
-            embed=season_force_delete_embed(preview, new_season=clean_new),
+            embed=season_force_delete_embed(
+                preview,
+                new_season=clean_new,
+                erase_completed_history=erase_completed_history,
+            ),
             view=SeasonForceDeleteConfirmationView(
                 db,
                 guild_id=interaction.guild_id,
                 season=settings["season"],
                 new_season=clean_new,
                 actor_id=interaction.user.id,
+                erase_completed_history=erase_completed_history,
             ),
             ephemeral=True,
         )

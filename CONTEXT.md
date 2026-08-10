@@ -21,8 +21,8 @@ The deployment target is bot-hosting.net. The repository is the source of truth 
 - `/setup` never creates permanent channels or categories. It saves metadata/roles and preserves existing destination mappings.
 - Permanent outputs are linked through `set...channel` commands and can be remapped after channel reorganization.
 - Every active week uses its own top-level `WEEK X MATCHUPS` category. The bot creates the next week before deleting the old one. There is no permanent Weekly Matchups category.
-- Matchup messages are not pinned.
-- Scheduling and result submission remain reaction-driven. General disputes use a persistent button and private modal; the reason is posted only to commissioner audit.
+- Matchup messages are not pinned. Each channel has one clean owner-tagged card and one **Game Complete / Submit Score** button; owners coordinate in ordinary channel messages and need no matchup commands or IDs.
+- Score submission uses a two-field team-labeled modal. Commissioner audit provides persistent **Approve / Edit Score / Reject** controls. Approval finalizes records/history and locks the matchup channel.
 - Unresolved games remain in SQLite after their Discord channels are archived and can be decided later from `/week`.
 - Official results, owner history, career records, XP, recaps, and audit records survive weekly cleanup.
 - Team emoji mappings store names, not Discord IDs. Replacing an emoji with the same name requires no database change.
@@ -52,7 +52,7 @@ Channel names are configurable; do not hardcode their IDs.
 - Roster, fixture, and member imports are previewed and atomic.
 - Weekly rollover is restart-safe and guarded against concurrent runs.
 - Failed Discord cleanup remains retryable.
-- /season-force-delete may discard only the active test season after exact-text and button confirmation; other guilds, configured destinations, team-role definitions, and older archives remain untouched.
+- `/season-force-delete` clears only the active test season after exact-text and button confirmation. It preserves audit logs, other guilds, configured destinations, team-role definitions, manually created/untracked Discord content, older archives, and completed career/history by default. Active-season history is erased only with `erase_completed_history:true` and the stronger `DELETE HISTORY <season>` confirmation.
 - `/season-test-reset` is the safe active-season testing reset: it removes generated week channels and resets unfinished scheduling/result/dispute state while preserving completed results, career history, imported data, and ownership.
 - Persistent views use stable custom IDs and are restored on startup.
 - Gemini receives only sanitized public league facts, never secrets, evidence, audit content, or private dispute text.
