@@ -75,6 +75,7 @@ from .ownership import (
     OwnershipError, assign_team_directly, claim_team, decide_team_claim,
     initialize_open_teams, sync_all_member_roles, sync_assignment_discord,
 )
+from .welcome import member_welcome_embed
 
 log = logging.getLogger(__name__)
 
@@ -209,6 +210,35 @@ class LeagueBot(discord.Client):
 
     async def on_message(self, message: discord.Message) -> None:
         await handle_matchup_message(self, self.db, message)
+
+    async def on_member_join(self, member: discord.Member) -> None:
+        if member.bot:
+            return
+        settings = await self.db.settings(member.guild.id)
+        channel = member.guild.get_channel(
+            settings.get("announcements_channel_id") or 0
+        )
+        if not isinstance(channel, discord.TextChannel):
+            return
+        try:
+            await channel.send(
+                content=member.mention,
+                embed=member_welcome_embed(
+                    member,
+                    game=settings["game"],
+                    league_name=settings["league_name"],
+                ),
+                allowed_mentions=discord.AllowedMentions(
+                    users=[member], roles=False, everyone=False
+                ),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            log.warning(
+                "Could not post welcome for member %s in guild %s",
+                member.id,
+                member.guild.id,
+            )
+
     async def on_member_remove(self, member: discord.Member) -> None:
         profile = await self.db.fetchone(
             """SELECT * FROM profiles

@@ -41,6 +41,7 @@ Weekly matchup categories are automatic and are not mapped to a permanent catego
 - Game of the Week graphics with team-emoji voting.
 - Deterministic rankings/weekly recap facts, season awards, and optional Gemini narrative generation.
 - Optional Twitch and YouTube live alerts.
+- Automatic new-member welcome cards in the configured announcements channel.
 
 ## Local development
 
