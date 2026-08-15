@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -15,6 +16,18 @@ from .db import Database
 from .helpers import FINAL_STATUSES, iso_now, utcnow
 
 log = logging.getLogger(__name__)
+
+
+_NFL_ABBREVIATIONS = {
+    "49ers": "SF", "bears": "CHI", "bengals": "CIN", "bills": "BUF",
+    "broncos": "DEN", "browns": "CLE", "buccaneers": "TB", "cardinals": "ARI",
+    "chargers": "LAC", "chiefs": "KC", "colts": "IND", "commanders": "WAS",
+    "cowboys": "DAL", "dolphins": "MIA", "eagles": "PHI", "falcons": "ATL",
+    "giants": "NYG", "jaguars": "JAX", "jets": "NYJ", "lions": "DET",
+    "packers": "GB", "panthers": "CAR", "patriots": "NE", "raiders": "LV",
+    "rams": "LAR", "ravens": "BAL", "saints": "NO", "seahawks": "SEA",
+    "steelers": "PIT", "texans": "HOU", "titans": "TEN", "vikings": "MIN",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,14 +58,33 @@ def _reader(content: bytes | str):
     return csv.DictReader(io.StringIO(text))
 
 
+def _derived_team_id(team_name: str) -> str:
+    """Create an ID shared by raw roster and fixture exports, which omit team IDs."""
+    normalized = re.sub(r"[^a-z0-9]+", "-", team_name.strip().casefold()).strip("-")
+    return f"team-name:{normalized}"
+
+
+def _derived_team_abbr(team_name: str) -> str:
+    name = team_name.strip()
+    known = _NFL_ABBREVIATIONS.get(name.casefold())
+    if known:
+        return known
+    words = re.findall(r"[A-Za-z0-9]+", name)
+    if len(words) > 1:
+        return "".join(word[0] for word in words)[:4].upper()
+    return (words[0][:4] if words else "TEAM").upper()
+
+
 def parse_fixture_import(content: bytes | str) -> tuple[list[FixtureImportRow], list[str]]:
     reader = _reader(content)
-    required = {
+    canonical_required = {
         "fixture_id", "week", "away_team_id", "away_abbr", "away_team",
         "home_team_id", "home_abbr", "home_team",
     }
     fields = set(reader.fieldnames or ())
-    if missing := sorted(required - fields):
+    raw_required = {"gameId", "weekIndex", "awayTeam", "homeTeam"}
+    is_raw_export = raw_required <= fields and not canonical_required <= fields
+    if not is_raw_export and (missing := sorted(canonical_required - fields)):
         return [], [f"Missing required column: {name}" for name in missing]
     rows: list[FixtureImportRow] = []
     errors: list[str] = []
@@ -61,11 +93,18 @@ def parse_fixture_import(content: bytes | str) -> tuple[list[FixtureImportRow], 
     team_identity: dict[str, tuple[str, str]] = {}
     for line, raw in enumerate(reader, 2):
         try:
-            fixture_id = raw["fixture_id"].strip()
-            week = int(raw["week"])
-            away_id, home_id = raw["away_team_id"].strip(), raw["home_team_id"].strip()
-            away, home = raw["away_team"].strip(), raw["home_team"].strip()
-            away_abbr, home_abbr = raw["away_abbr"].strip(), raw["home_abbr"].strip()
+            if is_raw_export:
+                fixture_id = (raw.get("gameId") or raw.get("id") or "").strip()
+                week = int(raw["weekIndex"]) + 1
+                away, home = raw["awayTeam"].strip(), raw["homeTeam"].strip()
+                away_id, home_id = _derived_team_id(away), _derived_team_id(home)
+                away_abbr, home_abbr = _derived_team_abbr(away), _derived_team_abbr(home)
+            else:
+                fixture_id = raw["fixture_id"].strip()
+                week = int(raw["week"])
+                away_id, home_id = raw["away_team_id"].strip(), raw["home_team_id"].strip()
+                away, home = raw["away_team"].strip(), raw["home_team"].strip()
+                away_abbr, home_abbr = raw["away_abbr"].strip(), raw["home_abbr"].strip()
             if not fixture_id or not away_id or not home_id or not away or not home:
                 raise ValueError("fixture and team IDs/names are required")
             if not 1 <= week <= 99 or away_id == home_id or away.casefold() == home.casefold():
@@ -96,9 +135,13 @@ def parse_fixture_import(content: bytes | str) -> tuple[list[FixtureImportRow], 
 
 def parse_roster_import(content: bytes | str) -> tuple[list[RosterImportRow], list[str]]:
     reader = _reader(content)
-    required = {"team_id", "team_abbr", "team_name", "player_id", "player_name", "position"}
+    canonical_required = {
+        "team_id", "team_abbr", "team_name", "player_id", "player_name", "position"
+    }
     fields = set(reader.fieldnames or ())
-    if missing := sorted(required - fields):
+    raw_required = {"rosterId", "team", "fullName", "position"}
+    is_raw_export = raw_required <= fields and not canonical_required <= fields
+    if not is_raw_export and (missing := sorted(canonical_required - fields)):
         return [], [f"Missing required column: {name}" for name in missing]
     rows: list[RosterImportRow] = []
     errors: list[str] = []
@@ -107,6 +150,33 @@ def parse_roster_import(content: bytes | str) -> tuple[list[RosterImportRow], li
     for line, raw in enumerate(reader, 2):
         try:
             values = {key: (value or "").strip() for key, value in raw.items() if key}
+            if is_raw_export:
+                team_name = values.get("team", "")
+                if not team_name and _boolean(values.get("isFreeAgent")):
+                    continue
+                player_name = values.get("fullName") or " ".join(
+                    value for value in (values.get("firstName"), values.get("lastName")) if value
+                )
+                values.update({
+                    "team_id": _derived_team_id(team_name),
+                    "team_abbr": _derived_team_abbr(team_name),
+                    "team_name": team_name,
+                    "player_id": values.get("rosterId") or values.get("id", ""),
+                    "player_name": player_name,
+                    "jersey_number": values.get("jerseyNum", ""),
+                    "overall": values.get("playerBestOvr", ""),
+                    "scheme_overall": values.get("playerSchemeOvr", ""),
+                    "dev_trait": values.get("devTrait", ""),
+                    "is_active": values.get("isActive", ""),
+                    "is_on_ir": values.get("isOnIR", ""),
+                    "is_practice_squad": values.get("isOnPracticeSquad", ""),
+                    "injury_type": values.get("injuryType", ""),
+                    "injury_length": values.get("injuryLength", ""),
+                    "contract_years_left": values.get("contractYearsLeft", ""),
+                    "contract_salary": values.get("contractSalary", ""),
+                    "cap_hit": values.get("capHit", ""),
+                    "years_pro": values.get("yearsPro", ""),
+                })
             team_id, name = values["team_id"], values["team_name"]
             abbr, player_id = values["team_abbr"], values["player_id"]
             player_name, position = values["player_name"], values["position"]
