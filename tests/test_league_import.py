@@ -40,6 +40,34 @@ def test_derived_neonsportz_snapshots_have_expected_shape():
     }
 
 
+def test_raw_games_and_players_exports_are_normalized_without_breaking_canonical_format():
+    roster = """rosterId,id,team,fullName,firstName,lastName,position,jerseyNum,playerBestOvr,playerSchemeOvr,devTrait,isActive,isFreeAgent,isOnIR,isOnPracticeSquad,injuryType,injuryLength,contractYearsLeft,contractSalary,capHit,yearsPro
+555222712,1802395199,Cardinals,Trey McBride,Trey,McBride,TE,85,99,98,3,True,False,False,False,98,0,4,53630000,869,4
+555000000,1802000000,,Free Agent,Free,Agent,WR,1,70,70,0,True,True,False,False,98,0,1,1000000,100,1
+"""
+    fixtures = """id,gameId,league,homeTeam,awayTeam,homeScore,awayScore,seasonIndex,stageIndex,weekIndex,status
+27211205,545783824,MADDEN 26 ALL TIME,Raiders,Cardinals,0,0,0,0,0,1
+27211206,545783825,MADDEN 26 ALL TIME,Cardinals,Raiders,0,0,0,0,2,1
+"""
+
+    roster_rows, roster_errors = parse_roster_import(roster)
+    fixture_rows, fixture_errors = parse_fixture_import(fixtures)
+
+    assert roster_errors == []
+    assert fixture_errors == []
+    assert len(roster_rows) == 1  # Free agents are not part of a team roster.
+    player = roster_rows[0]
+    assert (player.player_id, player.player_name, player.team_abbr) == (
+        "555222712", "Trey McBride", "ARI"
+    )
+    assert player.values["overall"] == "99"
+    assert player.values["jersey_number"] == "85"
+    assert [row.week for row in fixture_rows] == [1, 3]
+    assert fixture_rows[0].fixture_id == "545783824"
+    assert fixture_rows[0].away_team_id == player.team_id
+    assert fixture_rows[0].away_abbr == "ARI"
+
+
 @pytest.mark.asyncio
 async def test_full_import_starts_week_one_and_keeps_all_future_fixtures(tmp_path):
     db = Database(tmp_path / "league.sqlite3")
