@@ -59,15 +59,19 @@ class ReminderService:
             if remaining <= timedelta(0):
                 slot = "unscheduled_overdue"
                 label = "The advance deadline has passed"
-            elif remaining <= timedelta(hours=6):
-                slot = f"unscheduled_hour_{int(now.timestamp()) // 3600}"
-                label = f"Time remaining: {max(1, int(remaining.total_seconds() // 3600) + 1)} hour(s)"
-            elif remaining <= timedelta(hours=24):
-                slot = f"unscheduled_2h_{int(now.timestamp()) // 7200}"
-                label = f"Time remaining: {int(remaining.total_seconds() // 3600)} hours"
             else:
-                slot = f"unscheduled_day_{now.date().isoformat()}"
-                label = f"Time remaining: {remaining.days} day(s)"
+                last = await self.db.fetchone(
+                    """SELECT delivered_at FROM reminder_deliveries
+                       WHERE matchup_id=? AND milestone LIKE 'unscheduled_%'
+                         AND milestone != 'unscheduled_overdue'
+                       ORDER BY delivered_at DESC LIMIT 1""",
+                    (row["id"],),
+                )
+                last_reminder = _dt(last["delivered_at"] if last else row["created_at"])
+                if now - last_reminder < timedelta(hours=12):
+                    continue
+                slot = f"unscheduled_12h_{int(now.timestamp())}"
+                label = f"Time remaining: {max(1, int(remaining.total_seconds() // 3600))} hour(s)"
             if not await self._claim(row["id"], slot):
                 continue
             channel = self.bot.get_channel(row["channel_id"])
