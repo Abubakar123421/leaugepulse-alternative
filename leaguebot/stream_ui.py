@@ -29,7 +29,7 @@ def request_embed(request):
                     f"**Platform:** {platform.title()}\n**Account:** {link}",
         color=discord.Color.gold() if request['status'] == 'pending' else discord.Color.green() if request['status'] == 'approved' else discord.Color.red(),
     )
-    embed.set_footer(text='Only approved accounts with Gridiron Legends in the live title are announced.')
+    embed.set_footer(text='Only approved accounts with Gridiron Legends or Legacy in the live title are announced.')
     return embed
 
 

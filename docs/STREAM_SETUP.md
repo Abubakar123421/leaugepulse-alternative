@@ -2,7 +2,7 @@
 
 Legacy announces a stream only if the streamer belongs to an approved team profile in
 that Discord server, the account is registered, the stream is live, and its title
-contains `Gridiron Legends` (case-insensitive). Other games/leagues are ignored.
+contains `Gridiron Legends` or `Legacy` (case-insensitive). Other games/leagues are ignored.
 Members do not have to authorize access to their accounts; only public streams are checked.
 
 ## Twitch credentials
@@ -43,7 +43,8 @@ One set of operator credentials serves all registered league members.
 3. Register either or both accounts:
    `/registerstreams member:@Member twitch:theirusername youtube:https://www.youtube.com/@TheirHandle`
 4. To remove an account: `/removestream member:@Member platform:Twitch` (or YouTube).
-5. Member goes live with a title such as `Gridiron Legends | Week 4 | Away vs Home`.
+5. Member goes live with a title such as `Gridiron Legends | Week 4 | Away vs Home`
+   or `Legacy | Week 4 | Away vs Home`.
 
 Accepted Twitch input: username or Twitch channel URL.
 Accepted YouTube input: @handle, /@handle URL, UC channel ID, /channel/ URL, or legacy /user/ URL.
@@ -85,7 +86,7 @@ claim a team first, then request socials through `/requeststream`.
 ## Detection speed and quotas
 
 - Twitch checks every `STREAM_POLL_SECONDS` (default 180 seconds), batching up to 100 accounts.
-- YouTube shares a global live search for `"Gridiron Legends"` across registered channels;
+- YouTube shares one global OR search for `"Gridiron Legends"` or `Legacy` across registered channels;
   returned accounts and titles are independently checked before any announcement.
 - With 90 searches/day, YouTube checks approximately every 16–18 minutes at the default
   service interval. Search indexing can add delay or omit results; very short streams may
@@ -115,7 +116,7 @@ such a failure, since Discord and SQLite cannot be committed atomically.
 To verify on the host, use one registered account per platform:
 
 1. Go live with a title without the phrase; verify no notification.
-2. Change the live title to include `GRIDIRON LEGENDS`; allow for the check/indexing delay.
+2. Change the live title to include `GRIDIRON LEGENDS` or `LEGACY`; allow for the check/indexing delay.
 3. Verify member/team, title/link, and matchup information in `#live-now`.
 4. Leave the stream live through another check and restart Legacy; verify no second post.
 5. End the stream and start a new qualifying session; verify one new notification.

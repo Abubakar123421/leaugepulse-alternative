@@ -451,7 +451,7 @@ class StreamService:
         page = None
         while await self._reserve_youtube_search(first_page=page is None):
             params = {"part": "snippet", "eventType": "live", "type": "video",
-                      "q": '"Gridiron Legends"', "maxResults": 50, "key": self.youtube_key}
+                      "q": '"Gridiron Legends"|Legacy', "maxResults": 50, "key": self.youtube_key}
             if page:
                 params["pageToken"] = page
             async with session.get("https://www.googleapis.com/youtube/v3/search", params=params) as response:
@@ -478,7 +478,8 @@ class StreamService:
                 break
 
     async def _announce(self, profile, platform: str, account: str, live_id: str, title: str, url: str) -> None:
-        if "gridiron legends" not in title.casefold():
+        normalized_title = title.casefold()
+        if "gridiron legends" not in normalized_title and "legacy" not in normalized_title:
             return
         channel = self.bot.get_channel(profile["streams_channel_id"])
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != profile["guild_id"]:
@@ -491,7 +492,7 @@ class StreamService:
         if old and old["live_id"] == live_id:
             return
         key = (profile["guild_id"], platform, account, str(live_id))
-        embed = discord.Embed(title=f"Live on {platform.title()} — Gridiron Legends", url=url,
+        embed = discord.Embed(title=f"Live on {platform.title()} - League Stream", url=url,
                               description=discord.utils.escape_markdown(title)[:4096], color=discord.Color.purple())
         embed.add_field(name="Member / Team", value=f"<@{profile['user_id']}> · {discord.utils.escape_markdown(profile['team_name'])}"[:1024], inline=False)
         embed.add_field(name="Platform", value=platform.title())

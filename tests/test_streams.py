@@ -125,6 +125,7 @@ async def test_youtube_live_registered_title_and_budget(tmp_path, monkeypatch):
                              video('yes', CHANNEL, 'gridiron legends &amp; playoffs')])
     await service._tick_youtube(session)
     assert channels[100].send.await_count == 1
+    assert session.calls[0][1]['params']['q'] == '"Gridiron Legends"|Legacy'
     assert channels[100].send.call_args.kwargs['embed'].url.endswith('v=yes')
     await service._tick_youtube(session)
     assert len(session.calls) == 1
@@ -210,6 +211,9 @@ async def test_ambiguous_delivery_does_not_repeat(tmp_path, monkeypatch):
     (' gridiron legends stmh ', True),
     ('GRIDIRON LEGENDS | Week 2', True),
     ('Madden — Gridiron Legends playoffs', True),
+    (' Legacy ', True),
+    ('LEGACY | Week 3', True),
+    ('Madden legacy playoffs', True),
     ('Other Madden League', False),
     ('COD tonight', False),
     ('Gridiron unrelated Legends', False),

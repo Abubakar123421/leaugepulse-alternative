@@ -40,7 +40,7 @@ Weekly matchup categories are automatic and are not mapped to a permanent catego
 - Confirmation-protected `/season-test-reset` removes generated weekly channels and resets unfinished matchup workflow while preserving completed results, career history, rosters, fixtures, and ownership.
 - Game of the Week graphics with team-emoji voting.
 - Deterministic rankings/weekly recap facts, season awards, and optional Gemini narrative generation.
-- Team members use `/requeststream` for commissioner Approve/Reject review in audit, `/removemystream` for immediate self-removal, and `/mystreams` for account/request status. Commissioners retain `/registerstreams` and `/removestream`; Twitch/YouTube alerts only for live titles containing **Gridiron Legends**, with member/team, current matchup, and restart-safe session deduplication. See [stream setup](docs/STREAM_SETUP.md).
+- Team members use `/requeststream` for commissioner Approve/Reject review in audit, `/removemystream` for immediate self-removal, and `/mystreams` for account/request status. Commissioners retain `/registerstreams` and `/removestream`; Twitch/YouTube alerts only for live titles containing **Gridiron Legends** or **Legacy** (case-insensitive), with member/team, current matchup, and restart-safe session deduplication. See [stream setup](docs/STREAM_SETUP.md).
 - Automatic new-member welcome cards in the configured announcements channel.
 
 ## Local development

@@ -447,7 +447,7 @@ def register_commands(bot: LeagueBot) -> None:
         await interaction.followup.send(
             f"Registered streams for {member.mention}.\nTwitch: {profile['twitch'] or 'None'}\n"
             f"YouTube: {profile['youtube'] or 'None'}\n"
-            'Only live streams with "Gridiron Legends" in the title will be announced. '
+            'Only live streams with "Gridiron Legends" or "Legacy" in the title will be announced. '
             'Configure /setstreamchannel and the platform API credentials to enable alerts.', ephemeral=True,
         )
 
