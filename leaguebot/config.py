@@ -23,6 +23,8 @@ class Config:
     ai_enabled: bool
     ai_daily_limit: int
 
+    youtube_search_daily_limit: int = 90
+
     @classmethod
     def from_env(cls, *, require_token: bool = True) -> "Config":
         load_dotenv()
@@ -38,6 +40,7 @@ class Config:
             youtube_api_key=os.getenv("YOUTUBE_API_KEY") or None,
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             stream_poll_seconds=max(60, int(os.getenv("STREAM_POLL_SECONDS", "180"))),
+            youtube_search_daily_limit=max(1, int(os.getenv("YOUTUBE_SEARCH_DAILY_LIMIT", "90"))),
             reminder_poll_seconds=max(60, int(os.getenv("REMINDER_POLL_SECONDS", "300"))),
             gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip(),

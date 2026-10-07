@@ -318,146 +318,210 @@ class StreamService:
     def __init__(
         self, bot: discord.Client, db: Database, interval: int,
         twitch_client_id: str | None, twitch_secret: str | None, youtube_key: str | None,
+        *, youtube_search_daily_limit: int = 90,
     ):
-        self.bot = bot
-        self.db = db
-        self.interval = interval
-        self.twitch_client_id = twitch_client_id
-        self.twitch_secret = twitch_secret
+        self.bot, self.db = bot, db
+        self.interval = max(60, interval)
+        self.twitch_client_id, self.twitch_secret = twitch_client_id, twitch_secret
         self.youtube_key = youtube_key
+        self.youtube_search_daily_limit = max(1, youtube_search_daily_limit)
         self.task: asyncio.Task | None = None
         self._twitch_token: str | None = None
 
     def start(self) -> None:
-        if (self.twitch_client_id and self.twitch_secret) or self.youtube_key:
-            self.task = asyncio.create_task(self.run(), name="league-stream-alerts")
+        if not self.task or self.task.done():
+            if (self.twitch_client_id and self.twitch_secret) or self.youtube_key:
+                self.task = asyncio.create_task(self.run(), name="league-stream-alerts")
 
     async def close(self) -> None:
         if self.task:
             self.task.cancel()
-        for content_task in list(self.content_tasks):
-            content_task.cancel()
-        if self.content_tasks:
-            await asyncio.gather(*self.content_tasks, return_exceptions=True)
+            await asyncio.gather(self.task, return_exceptions=True)
 
     async def run(self) -> None:
         await self.bot.wait_until_ready()
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
             while not self.bot.is_closed():
                 try:
                     await self.tick(session)
                 except asyncio.CancelledError:
                     return
                 except Exception:
-                    log.exception("Stream service tick failed")
+                    # Do not log HTTP exception text: Google request URLs contain the API key.
+                    log.warning("Stream service tick failed")
                 await asyncio.sleep(self.interval)
 
     async def tick(self, session: aiohttp.ClientSession) -> None:
-        if self.youtube_key:
-            await self._tick_youtube(session)
-        if not (self.twitch_client_id and self.twitch_secret):
+        for platform in ("twitch", "youtube"):
+            if platform == "twitch" and not (self.twitch_client_id and self.twitch_secret):
+                continue
+            if platform == "youtube" and not self.youtube_key:
+                continue
+            try:
+                await getattr(self, f"_tick_{platform}")(session)
+            except (aiohttp.ClientError, asyncio.TimeoutError, discord.HTTPException, ValueError, KeyError):
+                log.warning("%s stream check failed; will retry", platform)
+
+    async def _profiles(self, platform: str):
+        import json
+        rows = await self.db.fetchall(
+            f"""SELECT p.*,g.streams_channel_id,g.season,g.current_week,g.features
+                FROM profiles p JOIN guild_settings g ON g.guild_id=p.guild_id
+                WHERE p.approved=1 AND p.{platform} IS NOT NULL AND p.{platform}!=''
+                  AND g.streams_channel_id IS NOT NULL"""
+        )
+        return [row for row in rows if json.loads(row["features"]).get("streams", True)]
+
+    async def _tick_twitch(self, session: aiohttp.ClientSession) -> None:
+        from .stream_accounts import twitch_login
+        profiles = await self._profiles("twitch")
+        accounts = {}
+        for profile in profiles:
+            try:
+                accounts.setdefault(twitch_login(profile["twitch"]), []).append(profile)
+            except ValueError:
+                continue
+        if not accounts:
             return
         if not self._twitch_token:
             async with session.post(
                 "https://id.twitch.tv/oauth2/token",
-                params={
-                    "client_id": self.twitch_client_id,
-                    "client_secret": self.twitch_secret,
-                    "grant_type": "client_credentials",
-                },
+                data={"client_id": self.twitch_client_id, "client_secret": self.twitch_secret,
+                      "grant_type": "client_credentials"},
             ) as response:
                 response.raise_for_status()
                 self._twitch_token = (await response.json())["access_token"]
-        profiles = await self.db.fetchall(
-            """SELECT DISTINCT p.guild_id, p.twitch, g.streams_channel_id
-               FROM profiles p JOIN guild_settings g ON g.guild_id=p.guild_id
-               WHERE p.approved=1 AND p.twitch IS NOT NULL AND p.twitch != ''"""
-        )
-        for profile in profiles:
-            name = profile["twitch"].rstrip("/").split("/")[-1].lower()
+        names = list(accounts)
+        for offset in range(0, len(names), 100):
             async with session.get(
                 "https://api.twitch.tv/helix/streams",
-                params={"user_login": name},
-                headers={
-                    "Client-ID": self.twitch_client_id,
-                    "Authorization": f"Bearer {self._twitch_token}",
-                },
+                params=[("user_login", name) for name in names[offset:offset + 100]] + [("first", "100")],
+                headers={"Client-ID": self.twitch_client_id, "Authorization": f"Bearer {self._twitch_token}"},
             ) as response:
                 if response.status == 401:
                     self._twitch_token = None
                     return
                 response.raise_for_status()
-                data = (await response.json()).get("data", [])
-            if not data:
-                continue
-            live_id = data[0]["id"]
-            state = await self.db.fetchone(
-                """SELECT live_id FROM stream_alert_state
-                   WHERE guild_id=? AND platform='twitch' AND channel_key=?""",
-                (profile["guild_id"], name),
-            )
-            if state and state["live_id"] == live_id:
-                continue
-            await self.db.execute(
-                """INSERT INTO stream_alert_state
-                   (guild_id, platform, channel_key, live_id, last_live_at)
-                   VALUES (?, 'twitch', ?, ?, ?)
-                   ON CONFLICT(guild_id, platform, channel_key)
-                   DO UPDATE SET live_id=excluded.live_id,last_live_at=excluded.last_live_at""",
-                (profile["guild_id"], name, live_id, iso_now()),
-            )
-            channel = self.bot.get_channel(profile["streams_channel_id"])
-            if isinstance(channel, discord.TextChannel):
-                await channel.send(f"🔴 **{name} is live on Twitch!** https://twitch.tv/{name}")
+                streams = (await response.json()).get("data", [])
+            for stream in streams:
+                if stream.get("type") != "live":
+                    continue
+                name = stream.get("user_login", "").lower()
+                for profile in accounts.get(name, []):
+                    await self._announce(profile, "twitch", name, stream["id"],
+                                         stream.get("title", ""), f"https://www.twitch.tv/{name}")
 
+    async def _reserve_youtube_search(self, *, first_page: bool) -> bool:
+        from zoneinfo import ZoneInfo
+        now = utcnow()
+        quota_day = now.astimezone(ZoneInfo("America/Los_Angeles")).date().isoformat()
+        async with self.db.connect() as conn:
+            await conn.execute("BEGIN IMMEDIATE")
+            await conn.execute("INSERT OR IGNORE INTO youtube_search_usage (quota_day) VALUES (?)", (quota_day,))
+            cursor = await conn.execute("SELECT * FROM youtube_search_usage WHERE quota_day=?", (quota_day,))
+            state = await cursor.fetchone()
+            if state["requests"] >= self.youtube_search_daily_limit:
+                return False
+            # Persist pacing across restarts and share one search across all registered channels.
+            cursor = await conn.execute("SELECT last_checked_at FROM youtube_search_usage WHERE last_checked_at IS NOT NULL ORDER BY last_checked_at DESC LIMIT 1")
+            last = await cursor.fetchone()
+            spacing = max(self.interval, 86400 / self.youtube_search_daily_limit)
+            if first_page and last and (now - _dt(last["last_checked_at"])).total_seconds() < spacing:
+                return False
+            await conn.execute("UPDATE youtube_search_usage SET requests=requests+1,last_checked_at=? WHERE quota_day=?", (now.isoformat(), quota_day))
+            await conn.commit()
+        return True
 
     async def _tick_youtube(self, session: aiohttp.ClientSession) -> None:
-        profiles = await self.db.fetchall(
-            """SELECT DISTINCT p.guild_id, p.youtube, g.streams_channel_id
-               FROM profiles p JOIN guild_settings g ON g.guild_id=p.guild_id
-               WHERE p.approved=1 AND p.youtube IS NOT NULL AND p.youtube != ''"""
-        )
+        from .stream_accounts import resolve_youtube
+        profiles = await self._profiles("youtube")
+        accounts = {}
         for profile in profiles:
-            value = profile["youtube"].strip().rstrip("/")
-            channel_id = value.split("/channel/", 1)[1].split("/", 1)[0] if "/channel/" in value else ""
-            if not channel_id.startswith("UC"):
+            try:
+                channel_id = await resolve_youtube(session, profile["youtube"], self.youtube_key)
+                accounts.setdefault(channel_id, []).append(profile)
+                # Canonicalize legacy handles once; no repeated account-resolution calls.
+                canonical = f"https://www.youtube.com/channel/{channel_id}"
+                if profile["youtube"] != canonical:
+                    await self.db.execute("UPDATE profiles SET youtube=? WHERE guild_id=? AND user_id=? AND youtube=?", (canonical, profile["guild_id"], profile["user_id"], profile["youtube"]))
+            except ValueError:
                 continue
-            async with session.get(
-                "https://www.googleapis.com/youtube/v3/search",
-                params={
-                    "part": "snippet", "channelId": channel_id, "eventType": "live",
-                    "type": "video", "maxResults": 1, "key": self.youtube_key,
-                },
-            ) as response:
+        if not accounts:
+            return
+        page = None
+        while await self._reserve_youtube_search(first_page=page is None):
+            params = {"part": "snippet", "eventType": "live", "type": "video",
+                      "q": '"Gridiron Legends"', "maxResults": 50, "key": self.youtube_key}
+            if page:
+                params["pageToken"] = page
+            async with session.get("https://www.googleapis.com/youtube/v3/search", params=params) as response:
                 if response.status in (400, 403):
-                    log.warning("YouTube polling rejected for channel %s", channel_id)
-                    continue
+                    log.warning("YouTube search rejected; check API credentials and quota")
+                    return
                 response.raise_for_status()
-                items = (await response.json()).get("items", [])
-            if not items:
-                continue
-            live_id = items[0]["id"]["videoId"]
-            state = await self.db.fetchone(
-                """SELECT live_id FROM stream_alert_state
-                   WHERE guild_id=? AND platform='youtube' AND channel_key=?""",
-                (profile["guild_id"], channel_id),
+                result = await response.json()
+            for item in result.get("items", []):
+                snippet = item.get("snippet", {})
+                channel_id = snippet.get("channelId")
+                if snippet.get("liveBroadcastContent") != "live":
+                    continue
+                live_id = item.get("id", {}).get("videoId")
+                if not live_id:
+                    continue
+                from html import unescape
+                title = unescape(snippet.get("title", ""))
+                for profile in accounts.get(channel_id, []):
+                    await self._announce(profile, "youtube", channel_id, live_id,
+                                         title, f"https://www.youtube.com/watch?v={live_id}")
+            page = result.get("nextPageToken")
+            if not page:
+                break
+
+    async def _announce(self, profile, platform: str, account: str, live_id: str, title: str, url: str) -> None:
+        if "gridiron legends" not in title.casefold():
+            return
+        channel = self.bot.get_channel(profile["streams_channel_id"])
+        if not isinstance(channel, discord.TextChannel) or channel.guild.id != profile["guild_id"]:
+            return
+        # Honor sessions already announced by the previous service during upgrades.
+        old = await self.db.fetchone(
+            "SELECT live_id FROM stream_alert_state WHERE guild_id=? AND platform=? AND channel_key=?",
+            (profile["guild_id"], platform, account),
+        )
+        if old and old["live_id"] == live_id:
+            return
+        key = (profile["guild_id"], platform, account, str(live_id))
+        embed = discord.Embed(title=f"Live on {platform.title()} — Gridiron Legends", url=url,
+                              description=discord.utils.escape_markdown(title)[:4096], color=discord.Color.purple())
+        embed.add_field(name="Member / Team", value=f"<@{profile['user_id']}> · {discord.utils.escape_markdown(profile['team_name'])}"[:1024], inline=False)
+        embed.add_field(name="Platform", value=platform.title())
+        embed.add_field(name="Watch live", value=f"[Open stream]({url})", inline=False)
+        matchup = await self.db.fetchone(
+            """SELECT away_team,home_team FROM matchups
+               WHERE guild_id=? AND season=? AND week=? AND (away_user_id=? OR home_user_id=?)
+               ORDER BY id LIMIT 1""",
+            (profile["guild_id"], profile["season"], profile["current_week"], profile["user_id"], profile["user_id"]),
+        )
+        if matchup:
+            embed.add_field(name=f"Current matchup · Week {profile['current_week']}",
+                            value=discord.utils.escape_markdown(f"{matchup['away_team']} @ {matchup['home_team']}")[:1024], inline=False)
+        async with self.db.connect() as conn:
+            cursor = await conn.execute(
+                "INSERT OR IGNORE INTO stream_notifications (guild_id,platform,channel_key,live_id,created_at) VALUES (?,?,?,?,?)",
+                (*key, iso_now()),
             )
-            if state and state["live_id"] == live_id:
-                continue
-            await self.db.execute(
-                """INSERT INTO stream_alert_state
-                   (guild_id, platform, channel_key, live_id, last_live_at)
-                   VALUES (?, 'youtube', ?, ?, ?)
-                   ON CONFLICT(guild_id, platform, channel_key)
-                   DO UPDATE SET live_id=excluded.live_id,last_live_at=excluded.last_live_at""",
-                (profile["guild_id"], channel_id, live_id, iso_now()),
-            )
-            channel = self.bot.get_channel(profile["streams_channel_id"])
-            if isinstance(channel, discord.TextChannel):
-                await channel.send(
-                    f"🔴 **A league member is live on YouTube!** "
-                    f"https://youtube.com/watch?v={live_id}"
-                )
+            await conn.commit()
+            if cursor.rowcount != 1:
+                return
+        try:
+            message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except (discord.Forbidden, discord.NotFound):
+            # Definitive rejection: safe to retry after permissions/routing are fixed.
+            await self.db.execute("DELETE FROM stream_notifications WHERE guild_id=? AND platform=? AND channel_key=? AND live_id=?", key)
+            raise
+        # An ambiguous transport failure retains the reservation to avoid duplicate posts.
+        await self.db.execute("UPDATE stream_notifications SET message_id=? WHERE guild_id=? AND platform=? AND channel_key=? AND live_id=?", (message.id, *key))
+
 
 def _dt(value: str):
     from datetime import datetime

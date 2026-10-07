@@ -4,6 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+import aiohttp
 import discord
 from discord import app_commands
 
@@ -53,6 +54,7 @@ from .season_ui import (
     season_test_reset_embed,
 )
 from .schedule_ui import ScheduleDecisionButton
+from .stream_accounts import twitch_login, resolve_youtube, register_accounts
 from .services import ReminderService, StreamService, WeekRolloverService, make_backup
 from .startup_migrations import backfill_active_leagues
 from .team_roles import (
@@ -142,6 +144,7 @@ class LeagueBot(discord.Client):
         self.streams = StreamService(
             self, self.db, config.stream_poll_seconds,
             config.twitch_client_id, config.twitch_client_secret, config.youtube_api_key,
+            youtube_search_daily_limit=config.youtube_search_daily_limit,
         )
 
     def week_lock(self, guild_id: int, season: str, week: int) -> asyncio.Lock:
@@ -414,6 +417,51 @@ def register_commands(bot: LeagueBot) -> None:
             interaction, field="streams_channel_id",
             label="Live stream alerts", channel=channel,
         )
+
+    @tree.command(name="registerstreams", description="Register a member's Twitch and/or YouTube account for league live alerts.")
+    async def register_streams(
+        interaction: discord.Interaction, member: discord.Member,
+        twitch: str | None = None, youtube: str | None = None,
+    ) -> None:
+        if await deny_dm(interaction):
+            return
+        settings = await db.settings(interaction.guild_id)
+        if not await require_commissioner(interaction, settings):
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            login = twitch_login(twitch) if twitch is not None else None
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+                channel_id = await resolve_youtube(session, youtube, bot.config.youtube_api_key) if youtube is not None else None
+            await register_accounts(db, interaction.guild_id, member.id, twitch=login, youtube=channel_id)
+        except (ValueError, aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            message = str(exc) if isinstance(exc, ValueError) else "Account verification unavailable. Please try again."
+            await interaction.followup.send(message, ephemeral=True)
+            return
+        await db.audit(interaction.guild_id, interaction.user.id, "stream_accounts_registered",
+                       target_type="member", target_id=str(member.id))
+        profile = await db.fetchone("SELECT twitch,youtube FROM profiles WHERE guild_id=? AND user_id=?", (interaction.guild_id, member.id))
+        await interaction.followup.send(
+            f"Registered streams for {member.mention}.\nTwitch: {profile['twitch'] or 'None'}\n"
+            f"YouTube: {profile['youtube'] or 'None'}\n"
+            'Only live streams with "Gridiron Legends" in the title will be announced. '
+            'Configure /setstreamchannel and the platform API credentials to enable alerts.', ephemeral=True,
+        )
+
+    @tree.command(name="removestream", description="Remove a member's registered streaming account.")
+    @app_commands.choices(platform=[app_commands.Choice(name="Twitch", value="twitch"), app_commands.Choice(name="YouTube", value="youtube")])
+    async def remove_stream(interaction: discord.Interaction, member: discord.Member, platform: app_commands.Choice[str]) -> None:
+        if await deny_dm(interaction):
+            return
+        settings = await db.settings(interaction.guild_id)
+        if not await require_commissioner(interaction, settings):
+            return
+        field = platform.value
+        if field not in {"twitch", "youtube"}:
+            return
+        await db.execute(f"UPDATE profiles SET {field}=NULL,updated_at=? WHERE guild_id=? AND user_id=?", (iso_now(), interaction.guild_id, member.id))
+        await db.audit(interaction.guild_id, interaction.user.id, "stream_account_removed", target_type="member", target_id=str(member.id), details={"platform": field})
+        await interaction.response.send_message(f"Removed {platform.name} for {member.mention}.", ephemeral=True)
 
     @tree.command(name="setstorylinechannel", description="Choose where spotlights, rankings, and awards are posted.")
     async def set_storyline_channel(

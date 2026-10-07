@@ -306,6 +306,21 @@ CREATE TABLE IF NOT EXISTS stream_alert_state (
     PRIMARY KEY(guild_id, platform, channel_key)
 );
 
+CREATE TABLE IF NOT EXISTS stream_notifications (
+    guild_id INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    channel_key TEXT NOT NULL,
+    live_id TEXT NOT NULL,
+    message_id INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(guild_id, platform, channel_key, live_id)
+);
+CREATE TABLE IF NOT EXISTS youtube_search_usage (
+    quota_day TEXT PRIMARY KEY,
+    requests INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id INTEGER NOT NULL,
