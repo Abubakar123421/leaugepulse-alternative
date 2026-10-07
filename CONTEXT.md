@@ -59,7 +59,7 @@ Channel names are configurable; do not hardcode their IDs.
 
 ## Current implementation
 
-Implemented modules include configurable destinations, full-season roster/fixture imports, Open Teams roster cards, self-claim and CSV ownership, team roles, matchup categories/channels, restart-safe 12-hour reminders for unscheduled matchups, plus one overdue reminder, result evidence/review, commissioner cases, final-score history, profiles/XP, season close/cleanup, confirmation-protected test-season force deletion, runtime emojis, Game of the Week voting, weekly recaps/rankings, awards, Gemini jobs, and optional Gridiron Legends title-filtered Twitch/YouTube alerts with commissioner account registration and persistent session/quota tracking.
+Implemented modules include configurable destinations, full-season roster/fixture imports, Open Teams roster cards, self-claim and CSV ownership, team roles, matchup categories/channels, restart-safe 12-hour reminders for unscheduled matchups, plus one overdue reminder, result evidence/review, commissioner cases, final-score history, profiles/XP, season close/cleanup, confirmation-protected test-season force deletion, runtime emojis, Game of the Week voting, weekly recaps/rankings, awards, Gemini jobs, and optional Gridiron Legends title-filtered Twitch/YouTube alerts with team-member approval requests, persistent commissioner audit review buttons, member/commissioner removal, and persistent session/quota tracking.
 
 The automated suite currently contains 54 passing tests before release cleanup. Always rerun the suite after changes rather than relying on this number.
 

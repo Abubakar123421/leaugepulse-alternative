@@ -54,7 +54,8 @@ from .season_ui import (
     season_test_reset_embed,
 )
 from .schedule_ui import ScheduleDecisionButton
-from .stream_accounts import twitch_login, resolve_youtube, register_accounts
+from .stream_accounts import twitch_login, resolve_youtube, register_accounts, remove_account
+from .stream_ui import StreamRequestReviewButton, register_member_stream_commands, log_stream_removal
 from .services import ReminderService, StreamService, WeekRolloverService, make_backup
 from .startup_migrations import backfill_active_leagues
 from .team_roles import (
@@ -158,6 +159,7 @@ class LeagueBot(discord.Client):
         self.add_dynamic_items(ViewRosterCardButton)
         self.add_dynamic_items(ClaimTeamCardButton)
         self.add_dynamic_items(ClaimReviewButton)
+        self.add_dynamic_items(StreamRequestReviewButton)
         self.add_dynamic_items(ScheduleDecisionButton)
         self.add_dynamic_items(OpponentResultDecisionButton)
         self.add_dynamic_items(MatchupDisputeButton)
@@ -282,6 +284,7 @@ async def deny_dm(interaction: discord.Interaction) -> bool:
 
 def register_commands(bot: LeagueBot) -> None:
     tree, db = bot.tree, bot.db
+    register_member_stream_commands(bot)
 
     @tree.command(
         name="setup",
@@ -459,9 +462,10 @@ def register_commands(bot: LeagueBot) -> None:
         field = platform.value
         if field not in {"twitch", "youtube"}:
             return
-        await db.execute(f"UPDATE profiles SET {field}=NULL,updated_at=? WHERE guild_id=? AND user_id=?", (iso_now(), interaction.guild_id, member.id))
-        await db.audit(interaction.guild_id, interaction.user.id, "stream_account_removed", target_type="member", target_id=str(member.id), details={"platform": field})
-        await interaction.response.send_message(f"Removed {platform.name} for {member.mention}.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await remove_account(db, interaction.guild_id, member.id, field, actor_id=interaction.user.id)
+        await log_stream_removal(bot, db, interaction.guild_id, member.id, field, interaction.user.id)
+        await interaction.followup.send(f"Removed {platform.name} for {member.mention} and cancelled pending requests for that platform.", ephemeral=True)
 
     @tree.command(name="setstorylinechannel", description="Choose where spotlights, rankings, and awards are posted.")
     async def set_storyline_channel(
@@ -678,13 +682,18 @@ def register_commands(bot: LeagueBot) -> None:
         ]
         return [app_commands.Choice(name=team, value=team) for team in teams[:25]]
 
-    @tree.command(name="register", description="Request a team and add Twitch/YouTube profile links.")
+    @tree.command(name="register", description="Request a team. Approved members add streaming accounts with /requeststream.")
     @app_commands.autocomplete(team=register_team_autocomplete)
     async def register(
         interaction: discord.Interaction, team: str, twitch: str | None = None,
         youtube: str | None = None,
     ) -> None:
         if await deny_dm(interaction):
+            return
+        if twitch is not None or youtube is not None:
+            await interaction.response.send_message(
+                "Streaming accounts now require separate commissioner approval. Register your team first, then use /requeststream for each platform.", ephemeral=True,
+            )
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
 
@@ -746,12 +755,8 @@ def register_commands(bot: LeagueBot) -> None:
             and existing["approved"]
             and normalize_team_name(existing["team_name"]) == normalized
         ):
-            await db.execute(
-                "UPDATE profiles SET twitch=?, youtube=?, updated_at=? WHERE id=?",
-                (twitch, youtube, iso_now(), existing["id"]),
-            )
             await interaction.followup.send(
-                f"Your **{canonical_team}** profile was updated and remains approved.",
+                f"You already own **{canonical_team}**. Use /requeststream to add streaming accounts or /removemystream to remove them.",
                 ephemeral=True,
             )
             return

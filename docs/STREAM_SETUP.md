@@ -55,6 +55,33 @@ Notifications include the member, their team, platform, actual title, clickable 
 and the current season/week matchup when available. Mentions are displayed without mass pings.
 Setting the server's `streams` feature off disables monitoring for that server.
 
+## Member requests and removals
+
+Approved team members can request each streaming platform themselves:
+
+- `/requeststream platform:Twitch account:TheirUsername`
+- `/requeststream platform:YouTube account:https://www.youtube.com/@TheirHandle`
+- `/mystreams` shows their active accounts and latest request status.
+- `/removemystream platform:Twitch` (or YouTube) removes their own account immediately
+  and cancels pending requests for that platform. No commissioner approval is needed.
+
+Configure `/setauditchannel` first. Each request posts a member/team/account card there,
+pings the configured Commissioner role, and includes **Approve** and **Reject** buttons.
+Only commissioners/admins can decide requests. The buttons continue working after a bot
+restart. Approval verifies the member still owns the same team in the same season and that
+another member has not registered the account. Legacy DMs the decision when DMs are allowed.
+
+Pending requests never activate a new account; an existing account stays active until
+its replacement is approved. Rejection preserves the existing account. One pending request
+per member/platform is allowed; members can cancel it using `/removemystream` before trying again.
+
+Commissioners retain `/removestream member:@Member platform:YouTube` for immediate removal,
+including cancellation of that member's pending platform request. Direct `/registerstreams`
+updates supersede pending requests for the supplied platforms. Removals are logged in audit.
+Session deduplication history is preserved, so re-adding an account does not reannounce the
+same livestream. The older `/register` team command no longer changes streaming links;
+claim a team first, then request socials through `/requeststream`.
+
 ## Detection speed and quotas
 
 - Twitch checks every `STREAM_POLL_SECONDS` (default 180 seconds), batching up to 100 accounts.

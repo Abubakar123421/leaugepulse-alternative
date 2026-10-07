@@ -306,6 +306,24 @@ CREATE TABLE IF NOT EXISTS stream_alert_state (
     PRIMARY KEY(guild_id, platform, channel_key)
 );
 
+CREATE TABLE IF NOT EXISTS stream_account_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER NOT NULL,
+    season TEXT NOT NULL,
+    user_id INTEGER NOT NULL,
+    team_name TEXT NOT NULL,
+    platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube')),
+    account TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    audit_channel_id INTEGER,
+    audit_message_id INTEGER,
+    decided_by INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_stream_request
+    ON stream_account_requests(guild_id,user_id,platform) WHERE status='pending';
+
 CREATE TABLE IF NOT EXISTS stream_notifications (
     guild_id INTEGER NOT NULL,
     platform TEXT NOT NULL,
