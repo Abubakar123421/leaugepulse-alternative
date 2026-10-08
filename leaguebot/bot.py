@@ -53,7 +53,7 @@ from .season_ui import (
     season_force_delete_embed,
     season_test_reset_embed,
 )
-from .schedule_ui import ScheduleDecisionButton
+from .schedule_ui import MatchupMarkScheduledButton, ScheduleDecisionButton
 from .stream_accounts import twitch_login, resolve_youtube, register_accounts, remove_account
 from .stream_ui import StreamRequestReviewButton, register_member_stream_commands, log_stream_removal
 from .services import ReminderService, StreamService, WeekRolloverService, make_backup
@@ -161,6 +161,7 @@ class LeagueBot(discord.Client):
         self.add_dynamic_items(ClaimReviewButton)
         self.add_dynamic_items(StreamRequestReviewButton)
         self.add_dynamic_items(ScheduleDecisionButton)
+        self.add_dynamic_items(MatchupMarkScheduledButton)
         self.add_dynamic_items(OpponentResultDecisionButton)
         self.add_dynamic_items(MatchupDisputeButton)
         self.add_dynamic_items(MatchupSubmitScoreButton)
@@ -192,6 +193,28 @@ class LeagueBot(discord.Client):
                 guild.id, created, len(errors),
             )
             repaired = await restore_pending_result_reviews(self, self.db, guild.id)
+            active_matchups = await self.db.fetchall(
+                """SELECT id FROM matchups
+                   WHERE guild_id=? AND season=? AND week=? AND channel_id IS NOT NULL
+                   AND status NOT IN
+                   ('complete','force_home','force_away','fair_sim')""",
+                (guild.id, settings["season"], settings["current_week"]),
+            )
+            matchup_cards_refreshed = 0
+            for matchup in active_matchups:
+                try:
+                    await refresh_matchup_message(self, self.db, matchup["id"])
+                    matchup_cards_refreshed += 1
+                except discord.HTTPException:
+                    log.warning(
+                        "Could not refresh matchup card %s in guild %s",
+                        matchup["id"], guild.id,
+                    )
+            if matchup_cards_refreshed:
+                log.info(
+                    "Refreshed %d active matchup card(s) in guild %s",
+                    matchup_cards_refreshed, guild.id,
+                )
             emoji_count, emoji_missing = await sync_team_emojis(
                 self.db, guild, settings["season"]
             )

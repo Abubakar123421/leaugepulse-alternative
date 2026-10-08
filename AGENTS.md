@@ -21,7 +21,7 @@ The Madden delivery currently uses two prepared CSV snapshots rather than a live
 - Team ownership lasts for the entire season.
 - `/importfixtures` imports the complete 18-week schedule. Only the active week has Discord channels.
 - Each week gets its own top-level `WEEK X MATCHUPS` category. Rollover creates the next week first, then deletes the previous week’s category/channels. Do not replace this with a permanent matchup category.
-- Matchup cards are not pinned. Scheduling/results use reactions; a persistent **Report Dispute** button opens a private reason form and posts a numbered case to commissioner audit.
+- Matchup cards are not pinned. Persistent **Mark as Scheduled** and **Game Complete / Submit Score** controls allow either matchup owner or a Commissioner/Admin to update the matchup; a persistent **Report Dispute** button opens a private reason form and posts a numbered case to commissioner audit.
 - Official results post once to the configured final-score channel and update permanent history, records, and XP.
 - Gemini is optional. AI failures must never block league operations.
 - Team custom emojis are resolved by name at runtime; never persist or hardcode Discord emoji IDs.

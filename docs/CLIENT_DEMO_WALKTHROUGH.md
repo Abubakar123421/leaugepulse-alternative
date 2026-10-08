@@ -20,7 +20,7 @@ Have both players run `/registerteam` for available teams. Show immediate owners
 
 ## 4. Schedule a game
 
-In the matchup channel, Player A reacts with the calendar and enters `YYYY-MM-DD HH:MM`. Player B accepts or counters. Show the localized confirmed time and that reminders stop once scheduled.
+In the matchup channel, the owners agree on a game time and either owner presses **Mark as Scheduled**. Show the public SCHEDULED confirmation and that reminders stop while the matchup channel and score button remain available.
 
 ## 5. Report an issue
 

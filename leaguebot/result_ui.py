@@ -226,11 +226,15 @@ class MatchupSubmitScoreButton(
                 "This matchup no longer exists.", ephemeral=True
             )
             return
-        if interaction.user.id not in (
-            matchup["away_user_id"], matchup["home_user_id"]
+        settings = await db.settings(matchup["guild_id"])
+        if (
+            interaction.user.id not in
+            (matchup["away_user_id"], matchup["home_user_id"])
+            and not await is_commissioner(interaction, settings)
         ):
             await interaction.response.send_message(
-                "Only the two assigned team owners can submit this score.", ephemeral=True
+                "Only the matchup owners or a Commissioner can submit this score.",
+                ephemeral=True,
             )
             return
         if matchup["status"] in FINAL_STATUSES:
@@ -247,8 +251,19 @@ class MatchupSubmitScoreButton(
 
 
 class MatchupScoreSubmissionView(discord.ui.View):
-    def __init__(self, matchup_id: int, *, disabled: bool = False):
+    def __init__(
+        self,
+        matchup_id: int,
+        *,
+        disabled: bool = False,
+        schedule_disabled: bool = False,
+    ):
         super().__init__(timeout=None)
+        from .schedule_ui import MatchupMarkScheduledButton
+
+        self.add_item(
+            MatchupMarkScheduledButton(matchup_id, disabled=schedule_disabled)
+        )
         self.add_item(MatchupSubmitScoreButton(matchup_id, disabled=disabled))
 
 

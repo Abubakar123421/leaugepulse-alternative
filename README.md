@@ -11,9 +11,9 @@ The bot uses prepared CSV snapshots; it does not connect directly to NeonSportz.
 3. `/importrosters` imports `output/neonsportz-derived/madden_team_rosters.csv` (32 franchises, 2,074 players).
 4. `/setopenteamlist` posts one roster card per franchise with private paginated **View Team** and **Claim Team** controls. Claims remain pending until a commissioner uses the persistent Approve/Deny review buttons. Commissioners can directly assign or replace one owner with `/assign-team`, or bulk-assign owners with `/importmembers`.
 5. `/importfixtures` imports `output/neonsportz-derived/madden_18_week_fixtures.csv` (272 fixtures, Weeks 1–18). Team ownership lasts for the full season.
-6. The active week gets a top-level `WEEK X MATCHUPS` category and one channel per fixture. Each channel contains one owner-tagged matchup card and one **Game Complete / Submit Score** button. Rollover creates the next week first, then deletes the previous week’s channels/category. Results and history remain in SQLite.
+6. The active week gets a top-level `WEEK X MATCHUPS` category and one channel per fixture. Each channel contains one owner-tagged matchup card with **Mark as Scheduled** and **Game Complete / Submit Score**. Either matchup owner or a Commissioner/Admin can use these controls. Rollover creates the next week first, then deletes the previous week’s channels/category. Results and history remain in SQLite.
 
-Matchup cards are not pinned. Owners coordinate normally in their matchup channel and submit both final scores from the card—no matchup IDs or slash commands are required. Commissioner audit receives an **Approve / Edit Score / Reject** review card. Approval finalizes standings and history, posts the official result once, and locks/renames the matchup channel.
+Matchup cards are not pinned. Once the owners agree on a game time, either owner or a Commissioner/Admin marks it **SCHEDULED**, which stops reminders without closing the channel. Either owner or a Commissioner/Admin can submit both final scores from the card—no matchup IDs or slash commands are required. Commissioner audit receives an **Approve / Edit Score / Reject** review card. Approval finalizes standings and history, posts the official result once, and locks/renames the matchup channel.
 
 ## Permanent destination commands
 

@@ -89,3 +89,23 @@ async def test_matchup_card_is_clean_and_owner_focused(tmp_path):
     assert embed.fields[0].value == "<@10>"
     assert embed.fields[1].value == "<@20>"
     assert all(field.name != "Reactions" for field in embed.fields)
+
+
+@pytest.mark.asyncio
+async def test_scheduled_matchup_card_confirms_status_and_keeps_score_workflow(tmp_path):
+    db = Database(tmp_path / "scheduled-card.sqlite3")
+    await db.initialize()
+    matchup_id = await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,
+            away_user_id,home_user_id,status,created_at,updated_at)
+           VALUES (1,'1',4,'scheduled','Vikings','49ers',10,20,
+                   'scheduled','now','now')"""
+    )
+    matchup = await db.fetchone("SELECT * FROM matchups WHERE id=?", (matchup_id,))
+    embed = await matchup_channel_embed(db, matchup, await db.settings(1))
+
+    status = next(field for field in embed.fields if field.name == "Status")
+    assert "SCHEDULED" in status.value
+    assert "reminders are stopped" in embed.footer.text
+    assert "Submit the score" in embed.footer.text

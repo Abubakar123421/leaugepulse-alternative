@@ -21,8 +21,8 @@ The deployment target is bot-hosting.net. The repository is the source of truth 
 - `/setup` never creates permanent channels or categories. It saves metadata/roles and preserves existing destination mappings.
 - Permanent outputs are linked through `set...channel` commands and can be remapped after channel reorganization.
 - Every active week uses its own top-level `WEEK X MATCHUPS` category. The bot creates the next week before deleting the old one. There is no permanent Weekly Matchups category.
-- Matchup messages are not pinned. Each channel has one clean owner-tagged card and one **Game Complete / Submit Score** button; owners coordinate in ordinary channel messages and need no matchup commands or IDs.
-- Score submission uses a two-field team-labeled modal. Commissioner audit provides persistent **Approve / Edit Score / Reject** controls. Approval finalizes records/history and locks the matchup channel.
+- Matchup messages are not pinned. Each channel has one clean owner-tagged card with **Mark as Scheduled** and **Game Complete / Submit Score** controls; owners coordinate in ordinary channel messages and need no matchup commands or IDs.
+- Either matchup owner or a Commissioner/Admin can mark a game scheduled, stopping reminders while keeping the channel open. Either matchup owner or a Commissioner/Admin can open the two-field team-labeled score modal. Commissioner audit provides persistent **Approve / Edit Score / Reject** controls. Approval finalizes records/history and locks the matchup channel.
 - Unresolved games remain in SQLite after their Discord channels are archived and can be decided later from `/week`.
 - Official results, owner history, career records, XP, recaps, and audit records survive weekly cleanup.
 - Team emoji mappings store names, not Discord IDs. Replacing an emoji with the same name requires no database change.

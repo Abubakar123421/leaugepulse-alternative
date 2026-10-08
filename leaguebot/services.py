@@ -91,7 +91,7 @@ class ReminderService:
                     f"⏰ {mentions}\n\nYour Week {row['week']} matchup has not been scheduled.\n"
                     f"{away_display} at {home_display}\n"
                     f"Advance deadline: <t:{int(deadline.timestamp())}:F>\n{label}\n\n"
-                    "React with 📅 on the matchup card to schedule immediately.",
+                    "Use **Mark as Scheduled** on the matchup card once the game time is agreed.",
                     allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
                 )
             if any(value is None for value in owners):

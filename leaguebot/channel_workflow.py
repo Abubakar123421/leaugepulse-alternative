@@ -187,10 +187,18 @@ async def matchup_channel_embed(db: Database, matchup, settings: dict, guild: di
             ),
             inline=False,
         )
+    if matchup["status"] == "scheduled":
+        scheduled_value = "📅 **SCHEDULED**"
+        if matchup["scheduled_at"]:
+            scheduled = datetime.fromisoformat(matchup["scheduled_at"])
+            scheduled_value += f"\nGame time: <t:{int(scheduled.timestamp())}:F>"
+        embed.add_field(name="Status", value=scheduled_value, inline=False)
     embed.set_footer(
         text=(
             "Score submitted — commissioners are reviewing it."
             if pending_review
+            else "Game marked SCHEDULED — reminders are stopped. Submit the score when finished."
+            if matchup["status"] == "scheduled"
             else "Use this channel to coordinate. Submit the score when the game is finished."
         )
     )
@@ -287,7 +295,14 @@ async def ensure_matchup_message(
             pass
     embed = await matchup_channel_embed(db, matchup, settings, channel.guild)
     score_pending = matchup["status"] in ("result_pending", "issue_reported")
-    view = MatchupScoreSubmissionView(matchup["id"], disabled=score_pending)
+    is_final = matchup["status"] in FINAL_STATUSES
+    view = MatchupScoreSubmissionView(
+        matchup["id"],
+        disabled=score_pending or is_final,
+        schedule_disabled=(
+            matchup["status"] == "scheduled" or score_pending or is_final
+        ),
+    )
     if message:
         await message.edit(embed=embed, view=view)
     else:

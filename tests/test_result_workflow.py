@@ -1,11 +1,14 @@
 import aiosqlite
 import pytest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from leaguebot.channel_workflow import MatchupDisputeView
 from leaguebot.db import Database, MATCHUP_RESULT_COLUMNS
+from leaguebot import result_ui
 from leaguebot.result_ui import (
     CommissionerResultReviewView,
+    MatchupSubmitScoreButton,
     MatchupScoreSubmissionView,
     OpponentResultDecisionView,
     ResultSubmissionModal,
@@ -77,7 +80,7 @@ def test_versioned_result_controls_cannot_target_newer_submissions():
     }
 
 
-def test_player_score_submission_is_one_persistent_button_with_team_labels():
+def test_matchup_card_has_persistent_schedule_and_score_buttons_with_team_labels():
     view = MatchupScoreSubmissionView(42)
     modal = ResultSubmissionModal(
         None,
@@ -85,11 +88,56 @@ def test_player_score_submission_is_one_persistent_button_with_team_labels():
     )
 
     assert view.timeout is None
-    assert len(view.children) == 1
-    assert view.children[0].custom_id == "leaguebot:matchup:submit:42"
-    assert view.children[0].item.label == "Game Complete / Submit Score"
+    assert {item.custom_id for item in view.children} == {
+        "leaguebot:matchup:scheduled:42",
+        "leaguebot:matchup:submit:42",
+    }
+    score_button = next(
+        item for item in view.children
+        if item.custom_id == "leaguebot:matchup:submit:42"
+    )
+    assert score_button.item.label == "Game Complete / Submit Score"
     assert modal.children[0].text == "Vikings score"
     assert modal.children[1].text == "49ers score"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "actor_id,is_staff,allowed",
+    [(10, False, True), (99, True, True), (30, False, False)],
+)
+async def test_score_button_allows_matchup_owner_or_commissioner(
+    tmp_path, monkeypatch, actor_id, is_staff, allowed
+):
+    db = Database(tmp_path / "score-access.sqlite3")
+    await db.initialize()
+    matchup_id = await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,
+            away_user_id,home_user_id,status,created_at,updated_at)
+           VALUES (1,'1',1,'access','Away','Home',10,20,'waiting','now','now')"""
+    )
+    monkeypatch.setattr(
+        result_ui, "is_commissioner", AsyncMock(return_value=is_staff)
+    )
+    response = SimpleNamespace(
+        send_message=AsyncMock(), send_modal=AsyncMock()
+    )
+    interaction = SimpleNamespace(
+        guild_id=1,
+        client=SimpleNamespace(db=db),
+        user=SimpleNamespace(id=actor_id),
+        response=response,
+    )
+
+    await MatchupSubmitScoreButton(matchup_id).callback(interaction)
+
+    if allowed:
+        response.send_modal.assert_awaited_once()
+        response.send_message.assert_not_awaited()
+    else:
+        response.send_modal.assert_not_awaited()
+        assert "matchup owners or a Commissioner" in response.send_message.call_args.args[0]
 
 @pytest.mark.asyncio
 async def test_attachment_url_refetches_a_new_audit_message():

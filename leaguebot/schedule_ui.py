@@ -10,6 +10,111 @@ from .db import Database
 from .helpers import FINAL_STATUSES, iso_now, parse_user_datetime, utcnow
 
 
+class MatchupMarkScheduledButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"leaguebot:matchup:scheduled:(?P<matchup_id>\d+)",
+):
+    def __init__(self, matchup_id: int, *, disabled: bool = False):
+        self.matchup_id = matchup_id
+        super().__init__(
+            discord.ui.Button(
+                label="Mark as Scheduled",
+                emoji="📅",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"leaguebot:matchup:scheduled:{matchup_id}",
+                disabled=disabled,
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction,
+        item: discord.ui.Button,
+        match: re.Match[str],
+        /,
+    ) -> "MatchupMarkScheduledButton":
+        return cls(int(match["matchup_id"]))
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        db: Database = interaction.client.db
+        matchup = await db.fetchone(
+            "SELECT * FROM matchups WHERE id=?", (self.matchup_id,)
+        )
+        if not matchup or interaction.guild_id != matchup["guild_id"]:
+            await interaction.response.send_message(
+                "This matchup no longer exists in this server.", ephemeral=True
+            )
+            return
+        settings = await db.settings(matchup["guild_id"])
+        if (
+            interaction.user.id not in
+            (matchup["away_user_id"], matchup["home_user_id"])
+            and not await is_commissioner(interaction, settings)
+        ):
+            await interaction.response.send_message(
+                "Only the matchup owners or a Commissioner can mark this game scheduled.",
+                ephemeral=True,
+            )
+            return
+        if matchup["status"] in FINAL_STATUSES:
+            await interaction.response.send_message(
+                "This matchup is already final.", ephemeral=True
+            )
+            return
+        if matchup["status"] in ("result_pending", "issue_reported"):
+            await interaction.response.send_message(
+                "A score is already awaiting Commissioner review.", ephemeral=True
+            )
+            return
+        if matchup["status"] == "scheduled":
+            await interaction.response.send_message(
+                "This matchup is already marked SCHEDULED.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        async with db.connect() as conn:
+            cursor = await conn.execute(
+                """UPDATE matchups SET status='scheduled',schedule_previous_at=NULL,
+                   updated_at=? WHERE id=? AND guild_id=?
+                   AND status NOT IN
+                   ('scheduled','result_pending','issue_reported','complete',
+                    'force_home','force_away','fair_sim')""",
+                (iso_now(), self.matchup_id, matchup["guild_id"]),
+            )
+            await conn.commit()
+        if cursor.rowcount != 1:
+            await interaction.followup.send(
+                "The matchup changed before it could be marked scheduled.", ephemeral=True
+            )
+            return
+
+        await db.audit(
+            matchup["guild_id"],
+            interaction.user.id,
+            "matchup_marked_scheduled",
+            target_type="matchup",
+            target_id=str(self.matchup_id),
+        )
+        try:
+            await interaction.channel.send(
+                f"📅 **SCHEDULED** - This game was marked scheduled by "
+                f"<@{interaction.user.id}>. Game reminders have stopped; "
+                "submit the score here when the game is complete.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+        from .channel_workflow import refresh_matchup_message
+
+        await refresh_matchup_message(interaction.client, db, self.matchup_id)
+        await interaction.followup.send(
+            "Game marked SCHEDULED. Reminders are stopped and the matchup remains open.",
+            ephemeral=True,
+        )
+
+
 class ScheduleProposalModal(discord.ui.Modal, title="Propose Game Time"):
     proposed = discord.ui.TextInput(
         label="Proposed date and time",

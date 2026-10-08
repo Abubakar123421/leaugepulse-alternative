@@ -32,7 +32,7 @@ Run `/destinations` to verify the routing. Any mapping can be changed later by r
 2. `/syncteamemojis` if the server has team emojis.
 3. Members claim from an Open Teams card, or a commissioner runs `/importmembers`. The recommended CSV header is `team,discord_id,twitch,youtube`; `discord_username` may replace `discord_id`, but IDs are more reliable.
 
-During the active week, owners communicate directly inside their generated matchup channel. When finished, either owner presses **Game Complete / Submit Score** and enters the two team scores. Commissioners review the resulting audit card with **Approve**, **Edit Score**, or **Reject**. Approval updates records/history and automatically locks the channel.
+During the active week, owners communicate directly inside their generated matchup channel. Once a game time is agreed, either owner or a Commissioner/Admin presses **Mark as Scheduled**; the channel confirms the status and reminders stop. When finished, either owner or a Commissioner/Admin presses **Game Complete / Submit Score** and enters the two team scores. Commissioners review the resulting audit card with **Approve**, **Edit Score**, or **Reject**. Approval updates records/history and automatically locks the channel.
 4. Use `/syncmemberroles` if Discord role synchronization reported failures.
 5. `/importfixtures` with `output/neonsportz-derived/madden_18_week_fixtures.csv`. Use `start_now:True` to create Week 1 and begin the seven-day clock.
 
@@ -55,7 +55,7 @@ If a Game of the Week picker appears empty, enter the `week` option first; the m
 
 ## Results
 
-Either assigned owner presses **Game Complete / Submit Score**, enters the two team-labeled scores, and sends the result to commissioner audit. Commissioners can **Approve**, **Edit Score**, or **Reject**. Approval posts the official result once, updates records/history/XP, and locks the matchup channel.
+Either assigned owner or a Commissioner/Admin presses **Game Complete / Submit Score**, enters the two team-labeled scores, and sends the result to commissioner audit. Commissioners can **Approve**, **Edit Score**, or **Reject**. Approval posts the official result once, updates records/history/XP, and locks the matchup channel.
 
 ## AI and streams
 
