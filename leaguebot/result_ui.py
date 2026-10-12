@@ -674,6 +674,11 @@ class CommissionerResultConfirmationView(discord.ui.View):
                 content="Your Commissioner access was removed.", view=None
             )
             return
+        if self.action == 'approve' and hasattr(interaction, 'web_admin') and not matchup['result_evidence_url']:
+            await interaction.edit_original_response(
+                content='Screenshot evidence is required. Request evidence or use the audited exceptional override on the website.', view=None
+            )
+            return
         applied = await _apply_result_decision(
             self.db, matchup, self.action, interaction.user.id
         )
@@ -1147,6 +1152,7 @@ async def _apply_result_decision(
     matchup,
     action: str,
     actor_id: int,
+    *, web_override_reason: str | None = None,
 ) -> bool:
     """Apply a review once; approval also updates both team records atomically."""
     new_status = "complete" if action == "approve" else "waiting"
@@ -1194,6 +1200,15 @@ async def _apply_result_decision(
                WHERE matchup_id=? AND status='open'""",
             (actor_id, now, matchup["id"]),
         )
+        if web_override_reason is not None:
+            import json
+            await conn.execute('UPDATE matchups SET result_review_note=? WHERE id=?',
+                ('Commissioner override: ' + web_override_reason, matchup['id']))
+            await conn.execute('INSERT INTO audit_logs (guild_id,actor_id,action,target_type,target_id,details,created_at) VALUES (?,?,?,?,?,?,?)',
+                (matchup['guild_id'], actor_id, 'result_override', 'matchup', str(matchup['id']),
+                 json.dumps({'reason': web_override_reason, 'away_score': matchup['away_score'], 'home_score': matchup['home_score']}), now))
+            await conn.execute('INSERT INTO web_outbox (guild_id,kind,entity_id,payload,created_at) VALUES (?,?,?,?,?)',
+                (matchup['guild_id'], 'result_publish', matchup['id'], '{}', now))
         await conn.commit()
         return True
 

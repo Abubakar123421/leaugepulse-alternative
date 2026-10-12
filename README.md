@@ -76,6 +76,12 @@ For later GitHub updates, back up `data/leaguebot.sqlite3` first and use a merge
 
 See [the hosting guide](docs/HOSTING_TRANSFER.md), [operator guide](docs/OPERATOR_GUIDE.md), and [agent handoff](AGENTS.md).
 
+## Optional website integration
+
+The Vercel website connects to an optional signed HTTP API running in this same bot process. The existing SQLite file remains authoritative; do not replace or upload a new database during this update. See [website setup and restart checklist](docs/WEBSITE_SETUP.md).
+
+Leave `WEB_API_SECRET` unset to continue normal bot-only operation. A restart installs the code but does not configure Discord OAuth or connect Vercel automatically.
+
 ## Security
 
 Never commit `.env`, Discord tokens, API keys, SQLite databases, logs, PIDs, or backups. Rotate any token that has ever been exposed. Production secrets belong only in the host’s environment-variable manager.

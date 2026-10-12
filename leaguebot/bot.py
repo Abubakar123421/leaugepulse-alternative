@@ -139,6 +139,7 @@ class LeagueBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self._week_locks: dict[tuple[int, str, int], asyncio.Lock] = {}
         self._roles_repaired = False
+        self.website = None
         self.reminders = ReminderService(self, self.db, config.reminder_poll_seconds)
         self.week_rollovers = WeekRolloverService(self, self.db)
         self.ai = AIService(self, self.db, config)
@@ -156,6 +157,9 @@ class LeagueBot(discord.Client):
         await backfill_active_leagues(self.db)
         await self.ai.start()
         register_commands(self)
+        from .web_api import WebsiteAPI
+        self.website = WebsiteAPI(self)
+        await self.website.start()
         self.add_dynamic_items(ViewRosterCardButton)
         self.add_dynamic_items(ClaimTeamCardButton)
         self.add_dynamic_items(ClaimReviewButton)
@@ -172,6 +176,8 @@ class LeagueBot(discord.Client):
         self.streams.start()
 
     async def close(self) -> None:
+        if self.website:
+            await self.website.close()
         await self.reminders.close()
         await self.week_rollovers.close()
         await self.streams.close()
@@ -2530,6 +2536,12 @@ def register_commands(bot: LeagueBot) -> None:
         settings = await db.settings(interaction.guild_id)
         if not await require_commissioner(interaction, settings):
             return
+        if bot.website and bot.website.secret and interaction.user.id not in bot.website.operator_ids:
+            await interaction.response.send_message(
+                'This database includes multiple servers. Only a configured platform operator may export it.',
+                ephemeral=True,
+            )
+            return
         await interaction.response.defer(ephemeral=True, thinking=True)
         path = await make_backup(db, bot.config.backup_dir)
         await db.audit(interaction.guild_id, interaction.user.id, "backup")
@@ -2613,7 +2625,7 @@ async def post_staff_message(
         await interaction.response.send_message("Run `/setup` to configure channels.", ephemeral=True)
         return
     await channel.send(embed=discord.Embed(title=title, description=body, color=0xFEE75C))
-    await db.audit(interaction.guild_id, interaction.user.id, feature, details={"title": title})
+    await db.audit(interaction.guild_id, interaction.user.id, feature, details={"title": title, "body": body if feature == "announcements" else None})
     await interaction.response.send_message("Posted.", ephemeral=True)
 
 

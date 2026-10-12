@@ -7,6 +7,8 @@ from typing import Any, AsyncIterator, Iterable
 
 import aiosqlite
 
+from .web_storage import WEB_SCHEMA
+
 from .helpers import iso_now
 
 SCHEMA = """
@@ -586,6 +588,7 @@ class Database:
                         await conn.execute(
                             f"ALTER TABLE {table} ADD COLUMN {name} {declaration}"
                         )
+            await conn.executescript(WEB_SCHEMA)
             await conn.commit()
 
     @asynccontextmanager
@@ -682,4 +685,3 @@ class Database:
             return False
     async def feature_enabled(self, guild_id: int, feature: str) -> bool:
         return bool((await self.settings(guild_id))["features"].get(feature, False))
-

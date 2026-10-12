@@ -481,6 +481,16 @@ class StreamService:
         normalized_title = title.casefold()
         if "gridiron legends" not in normalized_title and "legacy" not in normalized_title:
             return
+        await self.db.execute(
+            """INSERT INTO web_live_streams
+               (guild_id,platform,channel_key,live_id,user_id,team_name,title,url,last_seen_at)
+               VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(guild_id,platform,channel_key)
+               DO UPDATE SET live_id=excluded.live_id,user_id=excluded.user_id,
+               team_name=excluded.team_name,title=excluded.title,url=excluded.url,
+               last_seen_at=excluded.last_seen_at""",
+            (profile["guild_id"], platform, account, str(live_id), profile["user_id"],
+             profile["team_name"], title, url, iso_now()),
+        )
         channel = self.bot.get_channel(profile["streams_channel_id"])
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != profile["guild_id"]:
             return

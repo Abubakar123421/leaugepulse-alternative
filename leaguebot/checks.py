@@ -6,6 +6,9 @@ import discord
 async def is_commissioner(interaction: discord.Interaction, settings: dict) -> bool:
     if not isinstance(interaction.user, discord.Member):
         return False
+    website = getattr(getattr(interaction, 'client', None), 'website', None)
+    if website and await website.is_designated_commissioner(interaction.guild_id, interaction.user.id):
+        return True
     if interaction.user.guild_permissions.administrator:
         return True
     role_id = settings.get("commissioner_role_id")
