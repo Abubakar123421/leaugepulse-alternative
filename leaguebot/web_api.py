@@ -181,6 +181,9 @@ class WebsiteAPI:
             if actor not in APPOINTED_COMMISSIONERS:
                 raise web.HTTPForbidden(text='Only the two appointed commissioners can register servers.')
             data = await request.json()
+            action = str(data.get('action', 'register'))
+            if action not in {'register', 'remove'}:
+                raise ValueError('Unknown server action.')
             raw_id = str(data.get('guildId', ''))
             if not raw_id.isascii() or not raw_id.isdecimal() or not 1 <= len(raw_id) <= 20 or not 0 < int(raw_id) < 2**63:
                 raise ValueError('Enter a valid Discord server ID.')
@@ -197,12 +200,20 @@ class WebsiteAPI:
                     await conn.execute('BEGIN IMMEDIATE')
                     rows = await (await conn.execute('SELECT guild_id FROM web_server_registry')).fetchall()
                     enabled = self.configured_guild_ids | {row['guild_id'] for row in rows}
-                    if gid not in enabled and len(enabled) >= 5:
-                        raise web.HTTPConflict(text='Five servers are already enabled. No additional server can be registered.')
-                    if gid not in enabled:
-                        await conn.execute('INSERT INTO web_server_registry VALUES (?,?,?)', (gid, actor, iso_now()))
-                        await conn.execute('INSERT INTO audit_logs (guild_id,actor_id,action,details,created_at) VALUES (?,?,?,?,?)',
-                            (gid, actor, 'website_server_registered', json.dumps({'guild_id': str(gid)}), iso_now()))
+                    if action == 'remove':
+                        if gid in self.configured_guild_ids:
+                            raise web.HTTPConflict(text='This server is enabled by host configuration and cannot be removed from the dashboard.')
+                        if gid in enabled:
+                            await conn.execute('INSERT INTO audit_logs (guild_id,actor_id,action,details,created_at) VALUES (?,?,?,?,?)',
+                                (gid, actor, 'website_server_removed', json.dumps({'guild_id': str(gid)}), iso_now()))
+                            await conn.execute('DELETE FROM web_server_registry WHERE guild_id=?', (gid,))
+                    else:
+                        if gid not in enabled and len(enabled) >= 5:
+                            raise web.HTTPConflict(text='Five servers are already enabled. No additional server can be registered.')
+                        if gid not in enabled:
+                            await conn.execute('INSERT INTO web_server_registry VALUES (?,?,?)', (gid, actor, iso_now()))
+                            await conn.execute('INSERT INTO audit_logs (guild_id,actor_id,action,details,created_at) VALUES (?,?,?,?,?)',
+                                (gid, actor, 'website_server_registered', json.dumps({'guild_id': str(gid)}), iso_now()))
                     await conn.commit()
                 await self.refresh_guild_ids()
         elif request.method != 'GET':
@@ -216,7 +227,8 @@ class WebsiteAPI:
             settings = await self.db.settings(guild_id)
             servers.append({'id': str(guild_id), 'name': guild.name, 'leagueName': settings['league_name'],
                             'icon': str(guild.icon.url) if guild.icon else None,
-                            'role': 'commissioner' if admin else 'member' if interaction else 'public'})
+                            'role': 'commissioner' if admin else 'member' if interaction else 'public',
+                            'removable': guild_id not in self.configured_guild_ids})
         return web.json_response({'servers': servers, 'canRegisterServer': actor in APPOINTED_COMMISSIONERS,
                                   'enabledCount': len(self.guild_ids) if actor in APPOINTED_COMMISSIONERS else None})
 

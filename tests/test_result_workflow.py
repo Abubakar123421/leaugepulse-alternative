@@ -11,6 +11,7 @@ from leaguebot.result_ui import (
     MatchupSubmitScoreButton,
     MatchupScoreSubmissionView,
     OpponentResultDecisionView,
+    OpponentResultDecisionButton,
     ResultSubmissionModal,
     _attachment_url,
     _apply_result_decision,
@@ -179,3 +180,42 @@ async def test_approval_updates_standings_only_once(tmp_path):
     assert updated["status"] == "complete"
     assert (away["wins"], away["losses"]) == (1, 0)
     assert (home["wins"], home["losses"]) == (0, 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "action,expected_status,expected_opponent_status",
+    [("confirm", "result_pending", "confirmed"), ("dispute", "issue_reported", "disputed")],
+)
+async def test_opposing_owner_can_confirm_or_dispute_evidenced_score(
+    tmp_path, monkeypatch, action, expected_status, expected_opponent_status
+):
+    db = Database(tmp_path / f"result-{action}.sqlite3")
+    await db.initialize()
+    matchup_id = await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,
+            away_user_id,home_user_id,away_score,home_score,status,
+            result_submitted_by,result_submission_version,result_evidence_url,
+            created_at,updated_at)
+           VALUES (1,'1',1,'owners','Away','Home',10,20,24,17,'result_pending',
+                   10,1,'https://cdn.example/evidence.png','now','now')"""
+    )
+    monkeypatch.setattr(result_ui, "_refresh_audit_message", AsyncMock())
+    monkeypatch.setattr(result_ui, "_send_commissioner_notice", AsyncMock())
+    monkeypatch.setattr(result_ui, "_dm_user", AsyncMock())
+    interaction = SimpleNamespace(
+        guild_id=1, user=SimpleNamespace(id=20), client=SimpleNamespace(db=db),
+        response=SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock()),
+        edit_original_response=AsyncMock(),
+    )
+
+    await OpponentResultDecisionButton(action, matchup_id, 1).callback(interaction)
+
+    matchup = await db.fetchone("SELECT * FROM matchups WHERE id=?", (matchup_id,))
+    assert matchup["status"] == expected_status
+    assert matchup["result_opponent_status"] == expected_opponent_status
+    assert matchup["result_opponent_by"] == 20
+    assert await db.fetchone(
+        "SELECT * FROM audit_logs WHERE action=?", (f"result_{expected_opponent_status}",)
+    )

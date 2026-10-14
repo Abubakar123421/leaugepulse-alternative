@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import discord
 import pytest
 import pytest_asyncio
+from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
 
 from leaguebot.db import Database
@@ -245,3 +246,73 @@ async def test_registration_requires_shared_membership_and_does_not_touch_unrela
     guilds[1].fetch_member.side_effect = discord.NotFound(SimpleNamespace(status=404, reason='missing'), 'Missing member')
     assert (await call(site, '/v1/servers', actor=actor, data={'guildId': '1'})).status == 403
     assert not await db.fetchall('SELECT * FROM web_server_registry')
+
+
+@pytest.mark.asyncio
+async def test_manual_server_removal_only_unregisters_dashboard_access(site, monkeypatch):
+    from leaguebot.web_access import APPOINTED_COMMISSIONERS
+    api, _, db, guilds = site
+    actor = next(iter(APPOINTED_COMMISSIONERS))
+    member = SimpleNamespace(id=actor, display_name='Owner', bot=False)
+    for gid in (1, 2):
+        guilds[gid].fetch_member = AsyncMock(return_value=member)
+        guilds[gid].get_member = lambda uid: member if uid == actor else None
+    guilds[3] = SimpleNamespace(id=3, name='Disposable QA', icon=None, roles=[], text_channels=[],
+        members=[member], get_channel=lambda _: None, get_member=lambda uid: member if uid == actor else None,
+        fetch_member=AsyncMock(return_value=member))
+    await db.update_settings(3, season='qa')
+    matchup_id = await db.execute("""INSERT INTO matchups
+        (guild_id,season,week,external_key,away_team,home_team,status,created_at,updated_at)
+        VALUES (3,'qa',1,'keep-me','Away','Home','waiting','now','now')""")
+
+    assert (await call(site, '/v1/servers', actor=actor, data={'guildId': '3'})).status == 200
+    removed = await call(site, '/v1/servers', actor=actor, data={'guildId': '3', 'action': 'remove'})
+    assert removed.status == 200
+    assert not await db.fetchone('SELECT * FROM web_server_registry WHERE guild_id=3')
+    assert (await db.fetchone('SELECT * FROM matchups WHERE id=?', (matchup_id,)))['status'] == 'waiting'
+    assert await db.fetchone("SELECT * FROM audit_logs WHERE guild_id=3 AND action='website_server_removed'")
+    assert (await call(site, '/v1/servers/3/snapshot', actor=actor)).status == 404
+    assert (await call(site, '/v1/servers', actor=10, data={'guildId': '1', 'action': 'remove'})).status == 403
+    assert (await call(site, '/v1/servers', actor=actor, data={'guildId': '1', 'action': 'remove'})).status == 409
+
+
+@pytest.mark.asyncio
+async def test_api_recovers_after_bot_readiness_returns_without_losing_data(site):
+    api, client, db, _ = site
+    state = {'ready': False}
+    api.bot.is_ready = lambda: state['ready']
+    now = iso_now()
+    matchup_id = await db.execute("""INSERT INTO matchups
+        (guild_id,season,week,external_key,away_team,home_team,status,created_at,updated_at)
+        VALUES (1,'1',1,'restart-safe','Away','Home','scheduled',?,?)""", (now, now))
+
+    assert (await client.get('/health')).status == 200
+    assert (await (await client.get('/health')).json())['ready'] is False
+    assert (await call(site, '/v1/servers/1/snapshot')).status == 503
+    state['ready'] = True
+    recovered = await call(site, '/v1/servers/1/snapshot')
+    assert recovered.status == 200
+    assert any(m['id'] == matchup_id and m['status'] == 'scheduled' for m in (await recovered.json())['matchups'])
+
+
+@pytest.mark.asyncio
+async def test_score_evidence_upload_is_owner_bound_and_magic_byte_checked(site):
+    api, client, *_ = site
+    token_response = await call(site, '/v1/servers/1/upload-token', actor=10, data={})
+    token = (await token_response.json())['token']
+    form = FormData()
+    form.add_field('file', b'\x89PNG\r\n\x1a\nverified-image', filename='score.png', content_type='image/png')
+    uploaded = await client.post(f'/upload/{token}', data=form, headers={'Origin': 'https://league.example'})
+    assert uploaded.status == 200
+    evidence_token = (await uploaded.json())['token']
+    attachment = api.bridge.lookup(api.bridge.uploads, evidence_token, (1, 10))
+    assert attachment.filename == 'score.png' and attachment.content_type == 'image/png'
+    with pytest.raises(ValueError):
+        api.bridge.lookup(api.bridge.uploads, evidence_token, (1, 99))
+
+    bad_token = (await (await call(site, '/v1/servers/1/upload-token', actor=10, data={})).json())['token']
+    fake = FormData()
+    fake.add_field('file', b'not-a-real-image', filename='fake.png', content_type='image/png')
+    rejected = await client.post(f'/upload/{bad_token}', data=fake, headers={'Origin': 'https://league.example'})
+    assert rejected.status == 400
+    assert 'Unsupported screenshot format' in (await rejected.json())['error']

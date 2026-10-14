@@ -7,6 +7,8 @@ from leaguebot import schedule_ui
 from leaguebot.db import Database
 from leaguebot.schedule_ui import (
     MatchupMarkScheduledButton,
+    ScheduleDecisionButton,
+    ScheduleProposalModal,
     ScheduleDecisionView,
 )
 
@@ -74,3 +76,46 @@ async def test_mark_scheduled_allows_owner_or_commissioner(
         assert matchup["status"] == "waiting"
         channel.send.assert_not_awaited()
         assert "matchup owners or a Commissioner" in response.send_message.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_two_matchup_owners_propose_and_confirm_a_time(tmp_path, monkeypatch):
+    db = Database(tmp_path / "schedule-owners.sqlite3")
+    await db.initialize()
+    await db.update_settings(1, season="1", timezone="UTC")
+    matchup_id = await db.execute(
+        """INSERT INTO matchups
+           (guild_id,season,week,external_key,away_team,home_team,
+            away_user_id,home_user_id,status,created_at,updated_at)
+           VALUES (1,'1',1,'owners','Away','Home',10,20,'waiting','now','now')"""
+    )
+    monkeypatch.setattr(schedule_ui, "is_commissioner", AsyncMock(return_value=False))
+    monkeypatch.setattr(schedule_ui, "_notify_opponents", AsyncMock(return_value=True))
+    monkeypatch.setattr(schedule_ui, "_post_schedule_audit", AsyncMock())
+    monkeypatch.setattr(schedule_ui, "_dm_user", AsyncMock())
+    client = SimpleNamespace(db=db)
+    proposer = SimpleNamespace(
+        guild_id=1, user=SimpleNamespace(id=10), client=client,
+        response=SimpleNamespace(defer=AsyncMock()), edit_original_response=AsyncMock(),
+    )
+    modal = ScheduleProposalModal(db, matchup_id, "UTC")
+    modal.proposed._value = "2099-08-15 20:30"
+    await modal.on_submit(proposer)
+
+    proposed = await db.fetchone("SELECT * FROM matchups WHERE id=?", (matchup_id,))
+    assert proposed["status"] == "schedule_pending"
+    assert proposed["proposed_by"] == 10
+    assert proposed["schedule_proposal_version"] == 1
+
+    response = SimpleNamespace(send_message=AsyncMock(), defer=AsyncMock(), send_modal=AsyncMock())
+    opponent = SimpleNamespace(
+        guild_id=1, user=SimpleNamespace(id=20), client=client, response=response,
+        edit_original_response=AsyncMock(),
+    )
+    await ScheduleDecisionButton("accept", matchup_id, 1).callback(opponent)
+
+    confirmed = await db.fetchone("SELECT * FROM matchups WHERE id=?", (matchup_id,))
+    assert confirmed["status"] == "scheduled"
+    assert confirmed["scheduled_at"] == proposed["scheduled_at"]
+    assert await db.fetchone("SELECT * FROM audit_logs WHERE action='schedule_proposed'")
+    assert await db.fetchone("SELECT * FROM audit_logs WHERE action='schedule_accepted'")
