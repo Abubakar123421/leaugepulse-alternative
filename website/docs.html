@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation — Legacy</title>
+  <meta name="description" content="Set up and operate Legacy: invite &amp; permissions, season launch, CSV imports, matchup rooms, the commissioner dashboard, weekly lifecycle, awards, and hosting." />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body data-page="docs">
+
+  <div class="scene"></div>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div>
+
+  <!-- ═══ NAV ═══ -->
+  <header class="nav-shell">
+    <div class="wrap">
+      <nav class="nav">
+        <a class="nav-logo" href="index.html">
+          <img src="assets/img/logo-128.png" alt="Legacy shield logo" />
+          <strong>LEGACY</strong>
+        </a>
+        <div class="nav-links">
+          <a href="index.html" data-nav="home">Home</a>
+          <a href="commands.html" data-nav="commands">Commands</a>
+          <a href="docs.html" data-nav="docs">Docs</a>
+          <a href="faq.html" data-nav="faq">FAQ</a>
+        </div>
+        <a class="btn btn-gold btn-sm nav-cta" href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+        <button class="nav-burger" aria-label="Menu"><span></span><span></span><span></span></button>
+      </nav>
+    </div>
+  </header>
+  <div class="mobile-menu">
+    <a href="index.html" data-nav="home">Home</a>
+    <a href="commands.html" data-nav="commands">Commands</a>
+    <a href="docs.html" data-nav="docs">Docs</a>
+    <a href="faq.html" data-nav="faq">FAQ</a>
+    <a href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord →</a>
+  </div>
+
+  <!-- ═══ PAGE HERO ═══ -->
+  <section class="page-hero">
+    <div class="wrap">
+      <span class="kicker reveal">Documentation</span>
+      <h1 class="reveal" style="--d:.05s">From invite to <span class="grad-text">championship</span>.</h1>
+      <p class="lead reveal" style="--d:.1s">The complete operator's guide: install the bot, launch an 18-week season, run matchup rooms, make rulings, and archive it all — with permanent history intact.</p>
+    </div>
+  </section>
+
+  <div class="wrap docs-layout">
+    <!-- ═══ TOC ═══ -->
+    <aside class="glass docs-side" aria-label="On this page">
+      <h5>On this page</h5>
+      <a href="#invite" data-toc="invite">1 · Invite &amp; permissions</a>
+      <a href="#launch" data-toc="launch">2 · Launch a season</a>
+      <a href="#channels" data-toc="channels">3 · Channel map</a>
+      <a href="#imports" data-toc="imports">4 · CSV imports</a>
+      <a href="#matchups" data-toc="matchups">5 · Matchup rooms</a>
+      <a href="#dashboard" data-toc="dashboard">6 · Commissioner dashboard</a>
+      <a href="#lifecycle" data-toc="lifecycle">7 · Weekly lifecycle</a>
+      <a href="#content" data-toc="content">8 · Recaps, polls &amp; AI</a>
+      <a href="#seasons" data-toc="seasons">9 · Awards &amp; season close</a>
+      <a href="#hosting" data-toc="hosting">10 · Hosting &amp; backups</a>
+    </aside>
+
+    <!-- ═══ BODY ═══ -->
+    <main class="docs-body">
+
+      <!-- 1 · Invite -->
+      <section class="glass doc-section reveal" id="invite">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#ticket"></use></svg></span> Invite &amp; permissions</h2>
+        <p class="sec-sub">Get Legacy into the server with everything it needs — once.</p>
+        <p>Invite the bot with the <b>bot</b> and <b>applications.commands</b> scopes, and enable the <b>Server Members intent</b> in the Discord Developer Portal.</p>
+        <h3>Required bot permissions</h3>
+        <ul>
+          <li>View Channels · Send Messages · Embed Links · Attach Files</li>
+          <li>Read Message History · Manage Messages (to curate reactions)</li>
+          <li>Manage Roles — for the 32 team roles · Manage Channels — for weekly matchup categories</li>
+        </ul>
+        <div class="callout callout-gold"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#crown"></use></svg></span><div><b>Role order matters.</b> Keep the Legacy role <b>above all 32 team roles</b>, or it cannot assign or remove them. This is the single most common setup mistake.</div></div>
+        <div class="callout callout-blue"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#building"></use></svg></span><div><b>Multi-server ready.</b> Every guild keeps its own league, season, destinations, owners, and history. One bot can serve several leagues without any crossover.</div></div>
+      </section>
+
+      <!-- 2 · Launch -->
+      <section class="glass doc-section reveal" id="launch">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#rocket"></use></svg></span> Launch a season</h2>
+        <p class="sec-sub">The clean production sequence — about 15 minutes end to end.</p>
+        <div class="steps">
+          <div class="step"><div>Run <code>/setup</code> with the league identity, an IANA timezone (e.g. <code>America/New_York</code>), and a <b>dedicated Commissioner role</b> — never @everyone.</div></div>
+          <div class="step"><div>Map every permanent channel with the <code>set…channel</code> commands (see the <a href="#channels" style="color:var(--cyan)">channel map</a> below).</div></div>
+          <div class="step"><div>Run <code>/destinations</code> and fix any missing mapping or permission warning it reports.</div></div>
+          <div class="step"><div>Upload and confirm <code>madden_team_rosters.csv</code> with <code>/importrosters</code> — 32 franchises, 2,074 players.</div></div>
+          <div class="step"><div>Run <code>/setopenteamlist</code> <b>after</b> the roster import so all 32 roster cards post with full rosters.</div></div>
+          <div class="step"><div>Upload the server's 32 custom NFL emojis, then run <code>/syncteamemojis</code>.</div></div>
+          <div class="step"><div>Assign owners: members self-claim with <code>/registerteam</code>, or bulk-assign with an atomic <code>/importmembers</code> CSV. Repair any role hiccups with <code>/syncmemberroles</code>.</div></div>
+          <div class="step"><div>Upload and confirm <code>madden_18_week_fixtures.csv</code> with <code>/importfixtures start_now:True</code> — Week 1 opens with a seven-day clock.</div></div>
+          <div class="step"><div>Verify <b>WEEK 1 MATCHUPS</b> exists, every fixture has a channel, and each card shows both assigned owners.</div></div>
+          <div class="step"><div>Run <code>/backup</code> and download the file. Do this again before any risky operation.</div></div>
+        </div>
+      </section>
+
+      <!-- 3 · Channels -->
+      <section class="glass doc-section reveal" id="channels">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#map"></use></svg></span> Channel map</h2>
+        <p class="sec-sub">Permanent channels belong to the server — Legacy only routes to them.</p>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Feature</th><th>Recommended channel</th><th>Setter command</th></tr></thead>
+          <tbody>
+            <tr><td>League announcements</td><td>#announcements</td><td><code>/setannouncementchannel</code></td></tr>
+            <tr><td>Official final scores</td><td>#final-scores</td><td><code>/setscorechannel</code></td></tr>
+            <tr><td>Weekly recaps, rankings, awards</td><td>#weekly-recaps</td><td><code>/setstorylinechannel</code></td></tr>
+            <tr><td>Trade block &amp; Madden trades</td><td>#trade-block</td><td><code>/settradechannel</code></td></tr>
+            <tr><td>Roster directory / Open Teams</td><td>#open-teams-list</td><td><code>/setopenteamlist</code></td></tr>
+            <tr><td>Game of the Week polls</td><td>#game-of-the-week</td><td><code>/setpollchannel</code></td></tr>
+            <tr><td>Roster moves &amp; transfers</td><td>#roster-moves</td><td><code>/settransactionchannel</code></td></tr>
+            <tr><td>Live stream alerts</td><td>#live-now</td><td><code>/setstreamchannel</code></td></tr>
+            <tr><td>Private league management</td><td>#commissioner-audit</td><td><code>/setauditchannel</code></td></tr>
+            <tr><td>College recruiting (optional)</td><td>#recruiting</td><td><code>/setrecruitingchannel</code></td></tr>
+          </tbody>
+        </table></div>
+        <div class="callout callout-red"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#ban"></use></svg></span><div><b>No permanent matchup category.</b> Legacy creates <b>WEEK X MATCHUPS</b> automatically each week and removes old weekly space itself. Don't map or pre-create one.</div></div>
+        <h3>What lands in #commissioner-audit</h3>
+        <ul>
+          <li>Pending registrations and their stream links</li>
+          <li>Schedule proposals, counters, and confirmations</li>
+          <li>Private dispute statements with numbered case IDs</li>
+          <li>Result evidence review cards and confirmation state</li>
+          <li>Force-win, fair-sim, and help requests — plus every ruling</li>
+        </ul>
+        <p>Lock this channel down so only commissioners and the bot can view it — Legacy routes there, but Discord permissions stay in your hands.</p>
+      </section>
+
+      <!-- 4 · Imports -->
+      <section class="glass doc-section reveal" id="imports">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#download"></use></svg></span> CSV imports</h2>
+        <p class="sec-sub">Prepared snapshots in, all-or-nothing validation, private preview before anything applies.</p>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>File</th><th>Contents</th><th>Use with</th></tr></thead>
+          <tbody>
+            <tr><td>madden_team_rosters.csv</td><td>32 franchises · 2,074 players</td><td><code>/importrosters</code></td></tr>
+            <tr><td>madden_18_week_fixtures.csv</td><td>272 games · Weeks 1–18</td><td><code>/importfixtures</code></td></tr>
+            <tr><td>season_members.csv</td><td>Owner assignments (yours to create)</td><td><code>/importmembers</code></td></tr>
+            <tr><td>week_N.csv</td><td>Compatibility one-week schedule</td><td><code>/import-schedule</code></td></tr>
+          </tbody>
+        </table></div>
+
+        <h3>Roster schema — first six columns required</h3>
+        <div class="code-block">team_id,team_abbr,team_name,player_id,player_name,position,
+jersey_number,overall,dev_trait,is_on_ir,contract_years_left,contract_salary</div>
+
+        <h3>Fixture schema — all eight columns required</h3>
+        <div class="code-block">fixture_id,week,away_team_id,away_abbr,away_team,home_team_id,home_abbr,home_team</div>
+        <p>Import <b>rosters first</b> — fixture team IDs must match the roster snapshot. Duplicate IDs, duplicate weekly matchups, identical teams, or conflicts with an official result block the whole import.</p>
+
+        <h3>Member import — Discord-ID template (preferred)</h3>
+        <div class="code-block">team,discord_id,twitch,youtube
+Chicago Bears,123456789012345678,https://twitch.tv/example,
+Detroit Lions,234567890123456789,,https://youtube.com/@example</div>
+        <ul>
+          <li><b>replace</b> mode (default) releases omitted current owners; <b>merge</b> keeps them</li>
+          <li>IDs are safest — usernames must match exactly one current member</li>
+          <li>Omitted teams simply stay open; completed history is always preserved</li>
+          <li>Every import is previewed, and only the commissioner who created the preview can confirm it</li>
+        </ul>
+      </section>
+
+      <!-- 5 · Matchups -->
+      <section class="glass doc-section reveal" id="matchups">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#stadium"></use></svg></span> Matchup rooms</h2>
+        <p class="sec-sub">One channel per game. Owners act with reactions; everything is audited.</p>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Reaction</th><th>What it does</th><th>Who may use it</th></tr></thead>
+          <tbody>
+            <tr><td>📅 Calendar</td><td>Start a schedule proposal — type <code>YYYY-MM-DD HH:MM</code> within 10 minutes</td><td>Either owner</td></tr>
+            <tr><td>🔁 Counter</td><td>Counter the pending time with a replacement</td><td>Opposing owner</td></tr>
+            <tr><td>✅ Confirm</td><td>Accept the pending schedule — or confirm the submitted result</td><td>Opposing owner</td></tr>
+            <tr><td>🏁 Finish</td><td>Submit the result — type <b>away-home</b> score and attach one screenshot</td><td>Either owner</td></tr>
+            <tr><td>🏠 Home force win</td><td>Open a private commissioner case for a home force win</td><td>Home owner</td></tr>
+            <tr><td>✈️ Away force win</td><td>Open a private commissioner case for an away force win</td><td>Away owner</td></tr>
+            <tr><td>🤝 Fair sim</td><td>Request a neutral fair simulation</td><td>Owner or commissioner</td></tr>
+            <tr><td>🆘 Help</td><td>Open a private help case in commissioner audit</td><td>Owner or commissioner</td></tr>
+            <tr><td>🚨 Report Dispute</td><td>Button — opens a written statement modal with a numbered case ID</td><td>Either owner</td></tr>
+          </tbody>
+        </table></div>
+
+        <div class="callout callout-gold"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#numbers"></use></svg></span><div><b>Score order is away-home.</b> Not winner-loser, not your-team-first. Bears @ Lions with Bears 24, Lions 10 → enter <code>24-10</code>. Read the card title before typing.</div></div>
+
+        <h3>Scheduling, start to finish</h3>
+        <div class="steps">
+          <div class="step"><div>Owner A reacts 📅 on the matchup card and gets a 10-minute prompt.</div></div>
+          <div class="step"><div>Owner A types a future time in the league timezone — the proposal posts and is audited.</div></div>
+          <div class="step"><div>Owner B reacts ✅ to accept, or 🔁 to counter with a different time.</div></div>
+          <div class="step"><div>On acceptance the matchup shows a confirmed Discord timestamp and reminders stop.</div></div>
+        </div>
+
+        <h3>Results &amp; evidence</h3>
+        <div class="steps">
+          <div class="step"><div>An owner reacts 🏁, then types the <b>away-home</b> score with one PNG/JPG/WebP screenshot attached to the same message.</div></div>
+          <div class="step"><div>The opposing owner confirms — or disputes with ⚠️ / Report Dispute.</div></div>
+          <div class="step"><div>A commissioner reviews the private evidence in <code>/week</code> and approves, requests more proof, forces a winner, or fair-sims.</div></div>
+          <div class="step"><div>Only the commissioner's ruling updates official records, XP, and #final-scores — exactly once.</div></div>
+        </div>
+        <div class="callout callout-blue"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#shield"></use></svg></span><div><b>Player submissions are never automatically official.</b> Disputes and evidence review sit between every submission and the record book.</div></div>
+      </section>
+
+      <!-- 6 · Dashboard -->
+      <section class="glass doc-section reveal" id="dashboard">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#sliders"></use></svg></span> Commissioner dashboard</h2>
+        <p class="sec-sub">Open <code>/week</code> — every league decision lives on one panel.</p>
+        <ul>
+          <li><b>Approve Submitted Score</b> — finalizes a complete score-and-screenshot submission</li>
+          <li><b>Request More Evidence</b> — sends the review back for additional proof</li>
+          <li><b>Send Reminder</b> — nudges the assigned owners immediately</li>
+          <li><b>Force Win (away / home)</b> — awards the official result without a numeric score</li>
+          <li><b>Fair Sim</b> — records a neutral simulated outcome</li>
+          <li><b>Review Issue</b> — opens saved cases and dispute details</li>
+          <li><b>Reopen Final</b> — reverses standings and XP, then reopens the matchup (second confirmation required)</li>
+          <li><b>Advance Week</b> — opens next week's channels first, then cleans up the old week</li>
+        </ul>
+        <p>High-impact actions ask for a separate confirmation, and updates are atomic — two commissioners can never finalize the same matchup twice. Historical weeks stay viewable in <code>/week</code> even after their channels are gone.</p>
+      </section>
+
+      <!-- 7 · Lifecycle -->
+      <section class="glass doc-section reveal" id="lifecycle">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#refresh"></use></svg></span> Weekly lifecycle</h2>
+        <p class="sec-sub">Only the active week lives in Discord. Everything else lives in the database.</p>
+        <h3>Rollover, in order</h3>
+        <div class="steps">
+          <div class="step"><div>A guard locks the guild/season/week so only one rollover can run.</div></div>
+          <div class="step"><div>Legacy verifies the next imported week actually has fixtures.</div></div>
+          <div class="step"><div>The new <b>WEEK X MATCHUPS</b> category and channels are created.</div></div>
+          <div class="step"><div>The completed week's recap/audit workflow kicks off.</div></div>
+          <div class="step"><div>The current-week setting and new seven-day deadline are stored.</div></div>
+          <div class="step"><div>Only then is the previous week's Discord space deleted — failures stay retryable.</div></div>
+        </div>
+        <h3>Adaptive reminders</h3>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Time before deadline</th><th>Frequency</th><th>Stops when</th></tr></thead>
+          <tbody>
+            <tr><td>More than 24 hours</td><td>Once per day</td><td>Game time confirmed</td></tr>
+            <tr><td>24 → 6 hours</td><td>Every 2 hours</td><td>Game time confirmed</td></tr>
+            <tr><td>Final 6 hours</td><td>Every hour</td><td>Game time confirmed</td></tr>
+            <tr><td>Deadline passed</td><td>Restart-safe overdue milestones</td><td>Commissioner action or confirmed schedule</td></tr>
+          </tbody>
+        </table></div>
+        <p>Reminder slots are persisted — a bot restart never causes duplicate pings. If an owner seat is empty, commissioner audit is warned instead.</p>
+        <div class="callout callout-blue"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#skip"></use></svg></span><div><b>Need to jump weeks?</b> <code>/settings current_week:11</code> then <code>/createweek number:11</code>. That's an administrative shortcut — production seasons should advance through the dashboard.</div></div>
+      </section>
+
+      <!-- 8 · Content -->
+      <section class="glass doc-section reveal" id="content">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#newspaper"></use></svg></span> Recaps, polls &amp; AI</h2>
+        <p class="sec-sub">Deterministic facts. Optional Gemini narrative. Zero risk to operations.</p>
+        <h3>The Weekly Recap (<code>/aiweek</code>)</h3>
+        <ul>
+          <li><b>Upset of the Week</b> — weaker record beats stronger, point differential breaks ties</li>
+          <li><b>Best Game</b> — smallest margin, then highest combined score</li>
+          <li><b>Biggest Blowout</b> — largest margin, then highest winning score</li>
+          <li><b>MVP</b> — commissioner-entered via <code>/weekmvp</code> (placeholder until then)</li>
+          <li><b>Top 5 + projected AFC/NFC playoff seeds</b> — deterministic, with simplified ties</li>
+        </ul>
+        <p>Late results and MVP entries <b>edit the same recap</b> — no duplicates, ever. Per-game recaps are available with <code>/airecap</code> while the matchup channel still exists.</p>
+        <h3>Game of the Week (<code>/gameoftheweek</code>)</h3>
+        <p>Post one graphic per week to the polls channel; Legacy adds both teams' custom emojis as prediction votes (keycap fallback if emojis are missing). Enter the <b>week option first</b> so autocomplete can filter matchup IDs.</p>
+        <h3>Where AI stands</h3>
+        <ul>
+          <li>Gemini writes prose only — league facts are computed locally</li>
+          <li>It never sees tokens, evidence screenshots, disputes, or secrets</li>
+          <li>Daily caps, single-flight requests, retry-safe on rate limits</li>
+          <li>If AI fails, deterministic recaps still post and the league runs on</li>
+        </ul>
+        <p>Check readiness anytime with <code>/aistatus</code>; set the voice with <code>/aisettings</code>.</p>
+      </section>
+
+      <!-- 9 · Seasons -->
+      <section class="glass doc-section reveal" id="seasons">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#trophy"></use></svg></span> Awards &amp; season close</h2>
+        <p class="sec-sub">Eight awards, one published summary, then a clean archive.</p>
+        <h3>The eight required awards</h3>
+        <p>MVP · Offensive Player of the Year · Defensive Player of the Year · Rookie of the Year · Coach of the Year · User of the Year · Best Stream · Biggest Upset.</p>
+        <p>Legacy can suggest Coach, User, and Biggest Upset from saved league facts; commissioners may override every category with <code>/seasonaward</code>, then approve &amp; publish the draft via <code>/seasonawards</code>.</p>
+        <h3>Before <code>/season-close</code> will run</h3>
+        <ul>
+          <li>Every imported matchup is final — complete, force win, or fair sim</li>
+          <li>All eight awards exist, and the summary is approved &amp; published</li>
+          <li>The new season name is non-empty, different, and unused</li>
+          <li>A named champion (optional) must have participated in the season</li>
+        </ul>
+        <h3>What survives the archive</h3>
+        <div class="tbl-wrap"><table class="tbl">
+          <thead><tr><th>Preserved permanently</th><th>Removed / rotated</th></tr></thead>
+          <tbody>
+            <tr><td>Official game history &amp; decision types</td><td>Active matchup rows and prompts</td></tr>
+            <tr><td>Season participants &amp; ownership history</td><td>Reminder slots, pending registrations</td></tr>
+            <tr><td>Careers: W/L, XP, levels, championships</td><td>Active team stats &amp; current ownership</td></tr>
+            <tr><td>Published awards &amp; archive summary</td><td>Season trade/transaction workspace</td></tr>
+            <tr><td>Channel destinations &amp; server settings</td><td>Old weekly categories &amp; team-role members</td></tr>
+          </tbody>
+        </table></div>
+        <p>If Discord cleanup partially fails, the archive is already safe — retry with <code>/season-cleanup</code>. Browse any archived season later with <code>/season-history</code>.</p>
+        <div class="callout callout-gold"><span class="co-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#football"></use></svg></span><div><b>Playoffs are yours to run.</b> This release doesn't auto-seed a bracket — projections are informational, and commissioners decide the postseason with the scheduling tools.</div></div>
+      </section>
+
+      <!-- 10 · Hosting -->
+      <section class="glass doc-section reveal" id="hosting">
+        <h2><span class="sec-ico"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#monitor"></use></svg></span> Hosting &amp; backups</h2>
+        <p class="sec-sub">Current production: bot-hosting.net · Python 3.12 · entry file main.py.</p>
+        <h3>Environment variables</h3>
+        <div class="code-block">DISCORD_TOKEN=&lt;secret&gt;            # required
+DATABASE_PATH=data/leaguebot.sqlite3
+BACKUP_DIR=data/backups
+LOG_LEVEL=INFO
+GEMINI_API_KEY=&lt;optional&gt;         # AI narrative
+GEMINI_MODEL=gemini-2.5-flash
+TWITCH_CLIENT_ID=&lt;optional&gt;       # live alerts
+TWITCH_CLIENT_SECRET=&lt;optional&gt;
+YOUTUBE_API_KEY=&lt;optional&gt;</div>
+        <p>Secrets live only in the host's environment-variable manager — never in Git, Discord, screenshots, or support tickets. Rotate anything that's ever been exposed.</p>
+        <h3>Safe update procedure</h3>
+        <div class="steps">
+          <div class="step"><div>Run <code>/backup</code> and download the SQLite file off-platform.</div></div>
+          <div class="step"><div>Pause league-changing operations during the update.</div></div>
+          <div class="step"><div>Use a <b>merge-style</b> GitHub sync — never "replace all files".</div></div>
+          <div class="step"><div>Restart and check the console for the gateway connection and guild count.</div></div>
+          <div class="step"><div>Verify with <code>/destinations</code> and a read-only command like <code>/roster</code>.</div></div>
+        </div>
+        <h3>Backup policy</h3>
+        <ul>
+          <li>Back up before imports, season close, syncs, hosting changes, or maintenance</li>
+          <li>Keep copies off-platform — the host is never the only copy</li>
+          <li>Never commit a database or backup to Git</li>
+          <li>Run exactly one bot process against one database</li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <img src="assets/img/logo-128.png" alt="Legacy logo" />
+          <p>Legacy — Madden league operations for Discord. Multi-server, season-isolated, and built to keep permanent history.</p>
+        </div>
+        <div class="foot-col">
+          <h5>Product</h5>
+          <a href="commands.html">Command reference</a>
+          <a href="docs.html">Documentation</a>
+          <a href="faq.html">FAQ &amp; support</a>
+        </div>
+        <div class="foot-col">
+          <h5>Guides</h5>
+          <a href="docs.html#launch">Launch a season</a>
+          <a href="docs.html#matchups">Matchup rooms</a>
+          <a href="docs.html#seasons">Awards &amp; season close</a>
+        </div>
+        <div class="foot-col">
+          <h5>League</h5>
+          <a href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+          <a href="docs.html#hosting">Hosting &amp; backups</a>
+        </div>
+      </div>
+      <div class="foot-base">
+        <span>© <span data-year></span> Legacy · Madden League Operations</span>
+        <span>Not affiliated with EA Sports or the NFL.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js"></script>
+  <script>
+    /* TOC scrollspy */
+    (() => {
+      const links = [...document.querySelectorAll("[data-toc]")];
+      const spy = new IntersectionObserver((es) => {
+        es.forEach((e) => {
+          if (!e.isIntersecting) return;
+          links.forEach((l) => l.classList.toggle("active", l.dataset.toc === e.target.id));
+        });
+      }, { rootMargin: "-16% 0px -72% 0px" });
+      document.querySelectorAll(".doc-section").forEach((s) => spy.observe(s));
+    })();
+  </script>
+</body>
+</html>
