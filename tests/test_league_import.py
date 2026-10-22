@@ -1,4 +1,8 @@
 from pathlib import Path
+import csv
+import io
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -41,9 +45,10 @@ def test_derived_neonsportz_snapshots_have_expected_shape():
 
 
 def test_raw_games_and_players_exports_are_normalized_without_breaking_canonical_format():
-    roster = """rosterId,id,team,fullName,firstName,lastName,position,jerseyNum,playerBestOvr,playerSchemeOvr,devTrait,isActive,isFreeAgent,isOnIR,isOnPracticeSquad,injuryType,injuryLength,contractYearsLeft,contractSalary,capHit,yearsPro
-555222712,1802395199,Cardinals,Trey McBride,Trey,McBride,TE,85,99,98,3,True,False,False,False,98,0,4,53630000,869,4
-555000000,1802000000,,Free Agent,Free,Agent,WR,1,70,70,0,True,True,False,False,98,0,1,1000000,100,1
+    roster = """rosterId,id,team,fullName,firstName,lastName,position,jerseyNum,playerBestOvr,playerSchemeOvr,devTrait,isActive,isFreeAgent,isRetired,isOnIR,isOnPracticeSquad,injuryType,injuryLength,contractYearsLeft,contractSalary,capHit,yearsPro
+555222712,1802395199,Cardinals,Trey McBride,Trey,McBride,TE,85,99,98,3,True,False,False,False,False,98,0,4,53630000,869,4
+555000000,1802000000,,Free Agent,Free,Agent,WR,1,70,70,0,True,True,False,False,False,98,0,1,1000000,100,1
+555000001,1802000001,,Retired Player,Retired,Player,LT,72,88,88,2,True,False,True,False,False,98,0,0,0,0,12
 """
     fixtures = """id,gameId,league,homeTeam,awayTeam,homeScore,awayScore,seasonIndex,stageIndex,weekIndex,status
 27211205,545783824,MADDEN 26 ALL TIME,Raiders,Cardinals,0,0,0,0,0,1
@@ -55,7 +60,7 @@ def test_raw_games_and_players_exports_are_normalized_without_breaking_canonical
 
     assert roster_errors == []
     assert fixture_errors == []
-    assert len(roster_rows) == 1  # Free agents are not part of a team roster.
+    assert len(roster_rows) == 1  # Unassigned free agents/retirees are not on a team roster.
     player = roster_rows[0]
     assert (player.player_id, player.player_name, player.team_abbr) == (
         "555222712", "Trey McBride", "ARI"
@@ -66,6 +71,87 @@ def test_raw_games_and_players_exports_are_normalized_without_breaking_canonical
     assert fixture_rows[0].fixture_id == "545783824"
     assert fixture_rows[0].away_team_id == player.team_id
     assert fixture_rows[0].away_abbr == "ARI"
+
+
+def test_raw_player_without_team_or_unassigned_flag_is_still_invalid():
+    rows, errors = parse_roster_import(
+        "rosterId,team,fullName,position,isFreeAgent,isRetired\n"
+        "1,,Missing Team,QB,False,False\n"
+    )
+    assert rows == []
+    assert any("team, player ID" in error for error in errors)
+
+
+def _raw_roster_export():
+    canonical, errors = parse_roster_import((DATA / "madden_team_rosters.csv").read_bytes())
+    assert not errors
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["rosterId", "team", "fullName", "position", "playerBestOvr",
+                     "isFreeAgent", "isRetired"])
+    for player in canonical:
+        writer.writerow([player.player_id, player.team_name, player.player_name,
+                         player.position, player.values["overall"], False, False])
+    writer.writerow(["retired", "", "Retired Player", "QB", 80, False, True])
+    return output.getvalue().encode()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_format", [False, True])
+async def test_same_importrosters_command_previews_both_formats(tmp_path, monkeypatch, raw_format):
+    from leaguebot import bot as bot_module
+    from leaguebot.bot import LeagueBot, register_commands
+    from leaguebot.config import Config
+
+    bot = LeagueBot(Config.from_env(require_token=False))
+    bot.db = Database(tmp_path / "command.sqlite3")
+    await bot.db.initialize()
+    register_commands(bot)
+    monkeypatch.setattr(bot_module, "require_commissioner", AsyncMock(return_value=True))
+    content = _raw_roster_export() if raw_format else (DATA / "madden_team_rosters.csv").read_bytes()
+    attachment = SimpleNamespace(
+        filename="MAD27_players.csv" if raw_format else "madden_team_rosters.csv",
+        size=len(content), read=AsyncMock(return_value=content),
+    )
+    interaction = SimpleNamespace(
+        guild=SimpleNamespace(id=123), guild_id=123, user=SimpleNamespace(id=99),
+        response=SimpleNamespace(defer=AsyncMock()),
+        followup=SimpleNamespace(send=AsyncMock()),
+    )
+    try:
+        await bot.tree.get_command("importrosters").callback(interaction, attachment)
+        preview = interaction.followup.send.call_args.kwargs
+        assert "32 teams" in preview["embed"].description
+        assert len(preview["view"].rows) == 2074
+        assert not await bot.db.fetchall("SELECT * FROM roster_players")
+    finally:
+        await bot.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_first", [False, True])
+async def test_switching_roster_formats_preserves_franchise_ids_and_ownership(tmp_path, raw_first):
+    db = Database(tmp_path / "formats.sqlite3")
+    await db.initialize()
+    canonical, _ = parse_roster_import((DATA / "madden_team_rosters.csv").read_bytes())
+    raw, errors = parse_roster_import(_raw_roster_export())
+    assert not errors
+    await apply_roster_import(db, 123, "1", raw if raw_first else canonical)
+    team = await db.fetchone("SELECT * FROM franchises WHERE team_name='49ers'")
+    await db.execute(
+        """INSERT INTO profiles (guild_id,user_id,team_name,external_team_id,approved,updated_at)
+           VALUES (123,99,'49ers',?,1,'now')""", (team["external_team_id"],),
+    )
+    for rows in (raw, raw, canonical):
+        assert await apply_roster_import(db, 123, "1", rows) == (32, 2074)
+        updated = await db.fetchone("SELECT * FROM franchises WHERE team_name='49ers'")
+        assert updated["external_team_id"] == team["external_team_id"]
+        owner = await db.fetchone("SELECT * FROM profiles WHERE guild_id=123 AND user_id=99")
+        assert owner["external_team_id"] == team["external_team_id"]
+        assert owner["approved"] == 1
+        assert (await db.fetchone(
+            "SELECT COUNT(*) AS n FROM roster_players WHERE guild_id=123 AND season='1'"
+        ))["n"] == 2074
 
 
 @pytest.mark.asyncio

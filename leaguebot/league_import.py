@@ -152,7 +152,12 @@ def parse_roster_import(content: bytes | str) -> tuple[list[RosterImportRow], li
             values = {key: (value or "").strip() for key, value in raw.items() if key}
             if is_raw_export:
                 team_name = values.get("team", "")
-                if not team_name and _boolean(values.get("isFreeAgent")):
+                # Raw exports include unassigned retirees as well as free agents.
+                # Neither belongs to a franchise roster; other missing teams remain errors.
+                if not team_name and (
+                    _boolean(values.get("isFreeAgent"))
+                    or _boolean(values.get("isRetired"))
+                ):
                     continue
                 player_name = values.get("fullName") or " ".join(
                     value for value in (values.get("firstName"), values.get("lastName")) if value
@@ -223,9 +228,25 @@ async def apply_roster_import(
 ) -> tuple[int, int]:
     now = iso_now()
     teams = roster_team_summary(rows)
-    team_ids = {item[0] for item in teams}
     async with db.connect() as conn:
         await conn.execute("BEGIN IMMEDIATE")
+        cursor = await conn.execute(
+            "SELECT external_team_id,team_name FROM franchises WHERE guild_id=? AND season=?",
+            (guild_id, season),
+        )
+        existing_ids = {
+            item["team_name"].casefold(): item["external_team_id"]
+            for item in await cursor.fetchall()
+        }
+        # Raw exports derive IDs from names, whereas prepared files carry IDs.
+        # Keep existing franchise identities when the source format changes.
+        saved_ids = {
+            team_id: existing_ids.get(name.casefold(), team_id)
+            for team_id, name, _, _ in teams
+        }
+        teams = [(saved_ids[team_id], name, abbr, count)
+                 for team_id, name, abbr, count in teams]
+        team_ids = {item[0] for item in teams}
         await conn.execute(
             "DELETE FROM roster_players WHERE guild_id=? AND season=?", (guild_id, season)
         )
@@ -273,7 +294,7 @@ async def apply_roster_import(
                     contract_years_left,contract_salary,cap_hit,attributes_json,imported_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    guild_id, season, row.player_id, row.team_id, row.team_name, row.player_name,
+                    guild_id, season, row.player_id, saved_ids[row.team_id], row.team_name, row.player_name,
                     row.position, v.get("jersey_number"), _integer(v.get("overall")),
                     _integer(v.get("scheme_overall")), v.get("dev_trait"), _integer(v.get("age")),
                     v.get("height"), _integer(v.get("weight")), _integer(v.get("years_pro")),

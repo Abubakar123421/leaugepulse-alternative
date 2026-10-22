@@ -28,7 +28,7 @@ Run `/destinations` to verify the routing. Any mapping can be changed later by r
 
 ## Madden season onboarding
 
-1. `/importrosters` with `output/neonsportz-derived/madden_team_rosters.csv`; review and confirm.
+1. `/importrosters csv_file:<file>` with either `madden_team_rosters.csv` or a raw player export such as `MAD27_players.csv`; review and confirm. Both formats are detected automatically by the same command. Raw exports exclude unassigned free agents and retirees; invalid assigned-player rows still block the entire import.
 2. `/syncteamemojis` if the server has team emojis.
 3. Members claim from an Open Teams card, or a commissioner runs `/importmembers`. The recommended CSV header is `team,discord_id,twitch,youtube`; `discord_username` may replace `discord_id`, but IDs are more reliable.
 
