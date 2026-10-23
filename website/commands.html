@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Command Reference — Legacy</title>
+  <meta name="description" content="Every Legacy slash command — setup, ownership, imports, weekly operations, awards, and seasons — with syntax, examples, and usage notes." />
+  <link rel="icon" type="image/png" href="assets/img/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body data-page="commands">
+
+  <div class="scene"></div>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div>
+
+  <!-- ═══ NAV ═══ -->
+  <header class="nav-shell">
+    <div class="wrap">
+      <nav class="nav">
+        <a class="nav-logo" href="index.html">
+          <img src="assets/img/logo-128.png" alt="Legacy shield logo" />
+          <strong>LEGACY</strong>
+        </a>
+        <div class="nav-links">
+          <a href="index.html" data-nav="home">Home</a>
+          <a href="commands.html" data-nav="commands">Commands</a>
+          <a href="docs.html" data-nav="docs">Docs</a>
+          <a href="faq.html" data-nav="faq">FAQ</a>
+        </div>
+        <a class="btn btn-gold btn-sm nav-cta" href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+        <button class="nav-burger" aria-label="Menu"><span></span><span></span><span></span></button>
+      </nav>
+    </div>
+  </header>
+  <div class="mobile-menu">
+    <a href="index.html" data-nav="home">Home</a>
+    <a href="commands.html" data-nav="commands">Commands</a>
+    <a href="docs.html" data-nav="docs">Docs</a>
+    <a href="faq.html" data-nav="faq">FAQ</a>
+    <a href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord →</a>
+  </div>
+
+  <!-- ═══ PAGE HERO ═══ -->
+  <section class="page-hero">
+    <div class="wrap">
+      <span class="kicker reveal">Reference</span>
+      <h1 class="reveal" style="--d:.05s">All <span class="grad-text" id="cmd-count">50</span> commands. <span class="grad-text">One playbook.</span></h1>
+      <p class="lead reveal" style="--d:.1s">Every slash command in the production release — who can run it, exact syntax, a real example to copy, and the operational notes that keep your league out of trouble.</p>
+
+      <div class="glass cmd-toolbar reveal" style="--d:.15s">
+        <label class="cmd-search">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+          <input id="cmd-search" type="search" placeholder="Search commands, syntax, or what you're trying to do…" autocomplete="off" />
+          <kbd>/</kbd>
+        </label>
+        <div class="pills">
+          <button class="pill active" data-access-pill="all">All</button>
+          <button class="pill" data-access-pill="member"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#users"></use></svg> Members</button>
+          <button class="pill" data-access-pill="commissioner"><svg class="site-icon" aria-hidden="true"><use href="assets/img/icons.svg#shield"></use></svg> Commissioner</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ COMMANDS ═══ -->
+  <div class="wrap cmd-layout">
+    <aside class="glass cmd-side" id="cmd-side-links" aria-label="Command categories"></aside>
+    <main>
+      <div id="cmd-groups"></div>
+      <div class="cmd-empty glass" id="cmd-empty">
+        <b>No commands match.</b>
+        Try a shorter term — or clear the access filter.
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-grid">
+        <div class="foot-brand">
+          <img src="assets/img/logo-128.png" alt="Legacy logo" />
+          <p>Legacy — Madden league operations for Discord. Multi-server, season-isolated, and built to keep permanent history.</p>
+        </div>
+        <div class="foot-col">
+          <h5>Product</h5>
+          <a href="commands.html">Command reference</a>
+          <a href="docs.html">Documentation</a>
+          <a href="faq.html">FAQ &amp; support</a>
+        </div>
+        <div class="foot-col">
+          <h5>Guides</h5>
+          <a href="docs.html#launch">Launch a season</a>
+          <a href="docs.html#matchups">Matchup rooms</a>
+          <a href="docs.html#seasons">Awards &amp; season close</a>
+        </div>
+        <div class="foot-col">
+          <h5>League</h5>
+          <a href="https://discord.gg/3kXKNqNHM7" target="_blank" rel="noopener">Join Our Discord</a>
+          <a href="docs.html#hosting">Hosting &amp; backups</a>
+        </div>
+      </div>
+      <div class="foot-base">
+        <span>© <span data-year></span> Legacy · Madden League Operations</span>
+        <span>Not affiliated with EA Sports or the NFL.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/commands.js"></script>
+</body>
+</html>
